@@ -1,0 +1,22 @@
+{
+  "type": "somethingNew",
+  "id": "x1",
+  "timestamp": "2026-10-21T08:00:00Z",
+  "serviceUrl": "https://smba.trafficmanager.net/in/",
+  "from": {
+    "id": "29:prof-id",
+    "name": "Prof Rao",
+    "aadObjectId": "00000000-0000-0000-0000-0000000000a1"
+  },
+  "conversation": {
+    "id": "19:chanGeneral@thread.tacv2",
+    "conversationType": "channel"
+  },
+  "weird": {
+    "nested": [
+      1,
+      2,
+      3
+    ]
+  }
+}

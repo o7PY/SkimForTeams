@@ -1,0 +1,9 @@
+.venv/
+.git/
+.env
+.claude/
+.serena/
+tests/
+__pycache__/
+*.pyc
+appPackage.zip

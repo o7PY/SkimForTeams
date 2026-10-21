@@ -1,0 +1,51 @@
+{
+  "type": "message",
+  "serviceUrl": "https://smba.trafficmanager.net/in/",
+  "channelId": "msteams",
+  "from": {
+    "id": "29:prof-id",
+    "name": "Prof Rao",
+    "aadObjectId": "00000000-0000-0000-0000-0000000000a1"
+  },
+  "recipient": {
+    "id": "28:bot-app-id",
+    "name": "Skim · Course Updates"
+  },
+  "conversation": {
+    "id": "19:chanGeneral@thread.tacv2",
+    "conversationType": "channel",
+    "isGroup": true,
+    "tenantId": "11111111-2222-3333-4444-555555555555"
+  },
+  "channelData": {
+    "tenant": {
+      "id": "11111111-2222-3333-4444-555555555555"
+    },
+    "team": {
+      "id": "19:teamabc123@thread.tacv2",
+      "aadGroupId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    },
+    "channel": {
+      "id": "19:chanGeneral@thread.tacv2"
+    }
+  },
+  "id": "1700000000009",
+  "timestamp": "2026-10-20T09:30:00.000Z",
+  "text": "Syllabus attached",
+  "attachments": [
+    {
+      "contentType": "text/html",
+      "content": "<div>Syllabus attached<attachment id=\"f1\"></attachment></div>"
+    },
+    {
+      "contentType": "application/vnd.microsoft.teams.file.download.info",
+      "name": "syllabus.pdf",
+      "contentUrl": "https://example.sharepoint.com/sites/team/Shared%20Documents/General/syllabus.pdf",
+      "content": {
+        "downloadUrl": "https://example.sharepoint.com/dl/syllabus.pdf",
+        "uniqueId": "f1",
+        "fileType": "pdf"
+      }
+    }
+  ]
+}

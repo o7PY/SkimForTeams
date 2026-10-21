@@ -1,0 +1,38 @@
+{
+  "type": "message",
+  "id": "1700000000200",
+  "timestamp": "2026-10-20T11:00:00.000Z",
+  "serviceUrl": "https://smba.trafficmanager.net/in/",
+  "channelId": "msteams",
+  "from": {
+    "id": "29:stud-id",
+    "name": "Asha K",
+    "aadObjectId": "00000000-0000-0000-0000-0000000000b2"
+  },
+  "recipient": {
+    "id": "28:bot-app-id",
+    "name": "Skim · Course Updates"
+  },
+  "conversation": {
+    "id": "a:1personalchat",
+    "conversationType": "personal",
+    "tenantId": "11111111-2222-3333-4444-555555555555"
+  },
+  "text": "here you go",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.teams.file.download.info",
+      "name": "notes.pdf",
+      "content": {
+        "downloadUrl": "https://example.com/dl/notes.pdf",
+        "uniqueId": "u1",
+        "fileType": "pdf"
+      }
+    }
+  ],
+  "channelData": {
+    "tenant": {
+      "id": "11111111-2222-3333-4444-555555555555"
+    }
+  }
+}
