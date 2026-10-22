@@ -1,7 +1,7 @@
 # Skim · Phase 1: Retrieval & Visibility
 
 A Teams bot that stores every message event (raw + normalised) in Postgres. Spec: `Bookkeeping/PHASE1.md`.
-Logs of choices: `DECISIONS.md`, `DIFF.md`; plain-language overview: `ELI5.md`.
+Decision log, spec deviations and the plain-language overview live in `Bookkeeping/` (`DECISIONS.md`, `DIFF.md`, `ELI5.md`), which is git-ignored and kept locally.
 
 ## Run locally
 ```bash
@@ -59,4 +59,4 @@ docker build -t skim . && docker run --rm -p 8080:8080 --env-file .env skim
 - [ ] Removing the bot → `removed_at` set.
 - [ ] `/debug/*` returns the above with the token and 403 without.
 - [ ] The bot posted nothing to the channel except the one welcome message.
-- [ ] Every place real payloads differed from the spec is in `DIFF.md` (replace hand-written fixtures with sanitised real ones).
+- [ ] Every place real payloads differed from the spec is in `Bookkeeping/DIFF.md` (replace hand-written fixtures with sanitised real ones).
