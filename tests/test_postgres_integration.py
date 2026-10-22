@@ -19,6 +19,7 @@ async def test_full_sequence_against_postgres(load):
     conn = await asyncpg.connect(dsn, statement_cache_size=0)
     await conn.execute("drop schema public cascade; create schema public;")
     await conn.execute((MIGRATIONS / "001_init.sql").read_text())
+    await conn.execute((MIGRATIONS / "002_welcome_sent.sql").read_text())
     await conn.close()
 
     settings = Settings.from_env({"CONNECTIONS__SERVICE_CONNECTION__SETTINGS__ANONYMOUS_ALLOWED": "true",
@@ -35,6 +36,14 @@ async def test_full_sequence_against_postgres(load):
         assert [v["event"] for v in got["versions"]] == ["created", "edited", "edited", "deleted"]
         assert len(got["reactions"]) == 1
         assert (await s.list_teams())[0]["pairing_code"]
+        from datetime import datetime, timezone
+        now, team = datetime.now(timezone.utc), "19:teamabc123@thread.tacv2"
+        assert await s.claim_welcome(team, now) and not await s.claim_welcome(team, now)
+        await s.mark_team_installed(team, "ABC123", None, now)  # retry on an active install: no reset
+        assert not await s.claim_welcome(team, now)
+        await s.mark_team_removed(team, now)
+        await s.mark_team_installed(team, "ABC123", None, now)  # fresh install: reset
+        assert await s.claim_welcome(team, now)
         files = await s.get_message(CONV, "1700000000009")
         assert len(files["attachments"]) == 1
     finally:

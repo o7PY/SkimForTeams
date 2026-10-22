@@ -26,7 +26,7 @@ def manifest(app_id: str) -> dict:
     return {
         "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
         "manifestVersion": "1.17",
-        "version": "0.1.0",
+        "version": "1.0.0",
         "id": app_id,
         "developer": {  # placeholders: replace before publishing beyond the test tenant
             "name": "Skim",
@@ -50,6 +50,7 @@ def manifest(app_id: str) -> dict:
         }],
         "permissions": ["identity", "messageTeamMembers"],
         "validDomains": [],
+        "supportsChannelFeatures": "tier1",
         "webApplicationInfo": {"id": app_id, "resource": "https://RscBasedStoreApp"},
         "authorization": {"permissions": {"resourceSpecific": [
             {"name": n, "type": "Application"} for n in RSC_PERMISSIONS

@@ -1,0 +1,31 @@
+{
+  "type": "conversationUpdate",
+  "serviceUrl": "https://smba.trafficmanager.net/in/",
+  "channelId": "msteams",
+  "from": {
+    "id": "29:prof-id",
+    "name": "Prof Rao",
+    "aadObjectId": "00000000-0000-0000-0000-0000000000a1"
+  },
+  "recipient": {
+    "id": "28:bot-app-id",
+    "name": "Skim · Course Updates"
+  },
+  "conversation": {
+    "id": "a:1personalchat",
+    "conversationType": "personal",
+    "tenantId": "11111111-2222-3333-4444-555555555555"
+  },
+  "channelData": {
+    "tenant": {
+      "id": "11111111-2222-3333-4444-555555555555"
+    }
+  },
+  "id": "f:members3",
+  "timestamp": "2026-10-19T08:00:01.000Z",
+  "membersAdded": [
+    {
+      "id": "28:bot-app-id"
+    }
+  ]
+}

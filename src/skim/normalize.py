@@ -94,7 +94,7 @@ class Normalized:
     message_event: MessageEvent | None = None
     attachments: list[dict] = field(default_factory=list)
     reactions: list[dict] = field(default_factory=list)
-    install: dict | None = None  # {"action": "add"|"remove", "team_id", "by_aad", "at"}
+    install: dict | None = None  # {"action": "add"|"remove", "source", "team_id", "by_aad", "at"}
 
 
 def _team_row(activity: dict) -> dict | None:
@@ -226,18 +226,33 @@ def _reactions(activity: dict) -> list[dict]:
     return out
 
 
+def _bot_added(activity: dict) -> bool:
+    """conversationUpdate whose membersAdded includes the bot itself (member.id == recipient.id)."""
+    bot_id = _d(activity.get("recipient")).get("id")
+    return bool(bot_id) and any(_d(m).get("id") == bot_id for m in _l(activity.get("membersAdded")))
+
+
 def _install(activity: dict, team: dict | None) -> dict | None:
-    if activity.get("type") != "installationUpdate" or not team:
+    """Bot added to / removed from a team. Two signals: installationUpdate, and the bot appearing in
+    conversationUpdate.membersAdded (Teams does not always send the former)."""
+    if not team:
         return None
-    action = str(activity.get("action") or "")
-    if action.startswith("add"):
-        kind = "add"
-    elif action.startswith("remove"):
-        kind = "remove"
+    atype = activity.get("type")
+    if atype == "installationUpdate":
+        action = str(activity.get("action") or "")
+        if action.startswith("add"):  # includes "add-upgrade"
+            kind, source = "add", "installationUpdate"
+        elif action.startswith("remove"):
+            kind, source = "remove", "installationUpdate"
+        else:
+            return None
+    elif atype == "conversationUpdate" and _bot_added(activity):
+        kind, source = "add", "membersAdded"
     else:
         return None
     return {
         "action": kind,
+        "source": source,
         "team_id": team["id"],
         "by_aad": _d(activity.get("from")).get("aadObjectId"),
         "at": parse_ts(activity.get("timestamp")),

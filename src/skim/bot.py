@@ -96,7 +96,8 @@ def welcome_text(code: str) -> str:
     )
 
 
-def build_agent(settings: Settings, connection_manager: Connections, sender: Sender | None = None) -> AgentApplication:
+def build_agent(settings: Settings, storage: Storage, connection_manager: Connections,
+                sender: Sender | None = None) -> AgentApplication:
     send = sender or _default_sender
     app = AgentApplication[TurnState](
         storage=SdkMemoryStorage(),  # SDK turn state only; unused by Skim
@@ -111,12 +112,22 @@ def build_agent(settings: Settings, connection_manager: Connections, sender: Sen
         except Exception:
             log.exception("failed to send reply")
 
-    @app.activity("installationUpdate")
-    async def on_install(context: TurnContext, state: TurnState):
+    async def _welcome_if_new_install(context: TurnContext) -> None:
         cap = current_capture.get()
         inst = cap and cap.inserted and cap.normalized and cap.normalized.install
-        if inst and inst["action"] == "add":
+        if not inst or inst["action"] != "add":
+            return
+        # At most once per install, even if both signals (or retries) arrive.
+        if await storage.claim_welcome(inst["team_id"], inst["at"]):
             await _safe_send(context, welcome_text(pairing_code(settings.pairing_secret, inst["team_id"])))
+
+    @app.activity("installationUpdate")
+    async def on_install(context: TurnContext, state: TurnState):
+        await _welcome_if_new_install(context)
+
+    @app.activity("conversationUpdate")
+    async def on_conversation_update(context: TurnContext, state: TurnState):
+        await _welcome_if_new_install(context)
 
     @app.activity("message")
     async def on_message(context: TurnContext, state: TurnState):

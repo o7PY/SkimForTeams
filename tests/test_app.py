@@ -67,6 +67,50 @@ async def test_install_posts_welcome_once_with_pairing_code(env, load):
     assert store.teams[TEAM]["removed_at"] is not None and len(sent) == 1
 
 
+async def test_welcome_on_members_added_bot_only(env, load):
+    client, store, sent = env
+    await post(client, load("members_added_user"))
+    await post(client, load("members_added_bot_personal"))
+    assert sent == [] and store.teams.get(TEAM, {}).get("pairing_code") is None
+    await post(client, load("members_added_bot"))
+    code = pairing_code("s3cret", TEAM)
+    assert len(sent) == 1 and f"Pairing code: {code}" in sent[0]
+    assert store.teams[TEAM]["pairing_code"] == code and store.teams[TEAM]["installed_at"] is not None
+    await post(client, load("members_added_bot"))  # Teams retry
+    assert len(sent) == 1
+
+
+async def test_both_signals_and_upgrade_welcome_only_once(env, load):
+    client, store, sent = env
+    for name in ["members_added_bot", "install_add", "install_add_upgrade"]:  # membersAdded arrives first
+        await post(client, load(name))
+    assert len(sent) == 1
+    sent.clear()
+    store2 = MemoryStorage()
+    c2 = TestClient(TestServer(create_app(Settings.from_env(ANON), store2, lambda ctx, t: _append(sent, t))))
+    await c2.start_server()
+    try:
+        for name in ["install_add", "members_added_bot", "install_add_upgrade"]:  # installationUpdate first
+            await post(c2, load(name))
+    finally:
+        await c2.close()
+    assert len(sent) == 1
+
+
+async def _append(sent, text):
+    sent.append(text)
+
+
+async def test_reinstall_after_removal_welcomes_again(env, load):
+    client, store, sent = env
+    await post(client, load("install_add"))
+    await post(client, load("install_remove"))
+    a = load("install_add")
+    a["id"], a["timestamp"] = "f:install9", "2026-10-26T08:00:00.000Z"
+    await post(client, a)
+    assert len(sent) == 2 and store.teams[TEAM]["removed_at"] is None
+
+
 async def test_personal_chat_replies_logged(env, load):
     client, _, sent = env
     await post(client, load("personal_message_with_file"))

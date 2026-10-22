@@ -32,7 +32,8 @@ class MemoryStorage:
 
     async def upsert_team(self, team: dict) -> None:
         cur = self.teams.setdefault(team["id"], {"id": team["id"], "pairing_code": None, "installed_at": None,
-                                                 "removed_at": None, "installed_by_aad": None})
+                                                 "removed_at": None, "installed_by_aad": None,
+                                                 "welcome_sent_at": None})
         for k in ("aad_group_id", "name", "tenant_id"):
             if team.get(k) is not None:
                 cur[k] = team[k]
@@ -41,8 +42,17 @@ class MemoryStorage:
 
     async def mark_team_installed(self, team_id, pairing_code, by_aad, at) -> None:
         await self.upsert_team({"id": team_id})
-        self.teams[team_id].update(pairing_code=pairing_code, installed_at=at, removed_at=None,
-                                   installed_by_aad=by_aad)
+        t = self.teams[team_id]
+        if t["installed_at"] is None or t["removed_at"] is not None:  # a new install, not a retry/upgrade
+            t.update(installed_at=at, removed_at=None, installed_by_aad=by_aad, welcome_sent_at=None)
+        t["pairing_code"] = pairing_code
+
+    async def claim_welcome(self, team_id, at) -> bool:
+        t = self.teams.get(team_id)
+        if t is None or t["welcome_sent_at"] is not None:
+            return False
+        t["welcome_sent_at"] = at
+        return True
 
     async def mark_team_removed(self, team_id, at) -> None:
         await self.upsert_team({"id": team_id})

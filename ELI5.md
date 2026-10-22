@@ -13,7 +13,7 @@ sends notes when the bot is added or removed.
 2. Saves the note exactly as received (the "raw" copy). If we ever misread it, nothing is lost.
 3. Reads it and files it into neat tables: teams, messages, every edited version of a message,
    attachments, reactions.
-4. Stays silent, except: one hello with a **pairing code** when added to a team, and a
+4. Stays silent, except: one hello (once per install) with a **pairing code** when added to a team, and a
    `Logged ✅` reply if you DM it.
 
 ```

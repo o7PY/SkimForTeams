@@ -46,7 +46,7 @@ docker build -t skim . && docker run --rm -p 8080:8080 --env-file .env skim
 `/debug/messages/{conversation_id}/{message_id}` · `/debug/teams`
 
 ## Manual acceptance checklist (real test tenant)
-- [ ] Adding the bot to a team posts the welcome + pairing code; a `teams` row has that code.
+- [ ] Adding the bot to a team posts the welcome + pairing code exactly once (even if Teams sends both installationUpdate and conversationUpdate); a `teams` row has that code. Remove + re-add welcomes again.
 - [ ] A channel post **without @mention** appears in `messages` within ~5 s.
 - [ ] A thread reply appears with `reply_to_id` set (and in the same `conversation_id` as the channel).
 - [ ] Editing a post twice → `current_version = 3`, three `message_versions` rows, old text preserved.

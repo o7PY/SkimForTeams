@@ -29,7 +29,7 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
     storage = storage or make_storage(settings)
     connections = MsalConnectionManager(**settings.sdk_config)
     adapter = CloudAdapter(connection_manager=connections)
-    agent = build_agent(settings, connections, sender)
+    agent = build_agent(settings, storage, connections, sender)
 
     @jwt_authorization_decorator  # JWT is checked on this route only; /health and /debug have their own rules
     async def messages(request: web.Request) -> web.Response:

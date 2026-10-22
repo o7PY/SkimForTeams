@@ -75,10 +75,24 @@ class PostgresStorage:
     async def mark_team_installed(self, team_id, pairing_code, by_aad, at) -> None:
         assert self.pool
         await self.upsert_team({"id": team_id})
+        # A new install (never installed, or removed since) resets the welcome claim; a retry or
+        # add-upgrade on an active install leaves it alone.
         await self.pool.execute(
-            "update teams set pairing_code=$2, installed_at=$3, removed_at=null, installed_by_aad=$4 where id=$1",
+            """update teams set
+                 welcome_sent_at  = case when installed_at is null or removed_at is not null then null else welcome_sent_at end,
+                 installed_by_aad = case when installed_at is null or removed_at is not null then $4 else installed_by_aad end,
+                 installed_at     = case when installed_at is null or removed_at is not null then $3 else installed_at end,
+                 removed_at       = null,
+                 pairing_code     = $2
+               where id = $1""",
             team_id, pairing_code, at, by_aad,
         )
+
+    async def claim_welcome(self, team_id, at) -> bool:
+        assert self.pool
+        return await self.pool.fetchval(
+            "update teams set welcome_sent_at=$2 where id=$1 and welcome_sent_at is null returning true",
+            team_id, at) is True
 
     async def mark_team_removed(self, team_id, at) -> None:
         assert self.pool

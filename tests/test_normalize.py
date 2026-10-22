@@ -103,3 +103,19 @@ def test_log_line(load):
     assert "application/vnd.microsoft.teams.file.download.info" in line["attachment_types"]
     assert log_line(load("channel_post"), 1, include_text=False)["text"] is None
     assert len(log_line({"text": "x" * 500}, 1)["text"]) == 120
+
+
+def test_install_from_members_added_bot(load):
+    inst = normalize(load("members_added_bot")).install
+    assert inst["action"] == "add" and inst["source"] == "membersAdded"
+    assert inst["team_id"] == "19:teamabc123@thread.tacv2"
+
+
+def test_members_added_other_user_or_personal_is_not_an_install(load):
+    assert normalize(load("members_added_user")).install is None
+    assert normalize(load("members_added_bot_personal")).install is None  # no team
+
+
+def test_add_upgrade_is_an_install(load):
+    inst = normalize(load("install_add_upgrade")).install
+    assert inst["action"] == "add" and inst["source"] == "installationUpdate"

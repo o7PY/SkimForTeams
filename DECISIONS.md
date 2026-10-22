@@ -218,3 +218,18 @@ Never delete entries; supersede instead.
 - Alternatives considered: requirements.txt; Pillow.
 - Affects: pyproject.toml, scripts/build_manifest.py
 
+## D-028: Manifest version 1.0.0 and supportsChannelFeatures tier1
+- Date: 2026-10-22
+- Made by: human
+- Decision: Teams app manifest `version` is `1.0.0` (was `0.1.0`) and the top-level `supportsChannelFeatures` is `"tier1"`.
+- Why: Requested by the human.
+- Alternatives considered: none.
+- Affects: scripts/build_manifest.py
+## D-029: Welcome triggers and once-per-install tracking
+- Date: 2026-10-22
+- Made by: human (spec for this change supplied by the human), details by claude-code
+- Decision: The welcome + pairing code is sent when (a) `installationUpdate` action starts with `add` (including `add-upgrade`), or (b) `conversationUpdate.membersAdded` contains the bot (`member.id == recipient.id`) in a team conversation. Both set the team's install state via one path. New column `teams.welcome_sent_at` (migration 002) is claimed atomically (`update ... where welcome_sent_at is null`), so retries, duplicates, `add-upgrade` and the two signals together post at most once. A fresh install (never installed, or `removed_at` set) resets the claim, so reinstalling welcomes again. If the send itself fails it is logged and not retried.
+- Why: Teams does not reliably send `installationUpdate` for team installs; the membersAdded signal covers that gap. Tracking on the teams row survives restarts and multiple server instances, unlike in-memory flags.
+- Alternatives considered: dedupe only via `dedupe_key` (does not catch the two different activities for one install); in-memory flag (lost on restart); releasing the claim when the send fails (risks a double post if the failure was ambiguous).
+- Affects: normalize.py (`_install`), bot.py, storage/*.py, migrations/002_welcome_sent.sql, tests
+

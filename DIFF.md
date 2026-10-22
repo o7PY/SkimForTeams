@@ -74,3 +74,11 @@
 - Suggested spec update: None; run `scripts/migrate.py`, the integration test, and `docker build` before relying on them.
 - Status: open
 
+## DIFF-010: Welcome triggers and once-per-install tracking
+- Spec section: §6 FR-7 (and §5 teams table)
+- Spec says: `installationUpdate` add (in a team): upsert `teams` row, compute pairing code, post once in that conversation. No dedupe beyond raw-activity dedupe; `teams` has no welcome tracking column.
+- Implementation does: Also triggers on `conversationUpdate` `membersAdded` containing the bot in a team conversation; `add-upgrade` counts as add. Adds `teams.welcome_sent_at` (migration 002) and posts at most once per install; reinstall after removal resets it.
+- Why: Human requested (Teams may not send installationUpdate; retries/duplicates must not double-post).
+- Suggested spec update: FR-7: "On `installationUpdate` with action starting `add`, or `conversationUpdate` whose `membersAdded` includes the bot (`member.id == recipient.id`) in a team: upsert the `teams` row, compute the pairing code, and post the welcome once per install (tracked by `teams.welcome_sent_at`; a fresh install after removal resets it)." In §5 add `welcome_sent_at timestamptz` to `teams`.
+- Status: open
+
