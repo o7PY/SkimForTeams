@@ -233,3 +233,150 @@ Never delete entries; supersede instead.
 - Alternatives considered: dedupe only via `dedupe_key` (does not catch the two different activities for one install); in-memory flag (lost on restart); releasing the claim when the send fails (risks a double post if the failure was ambiguous).
 - Affects: normalize.py (`_install`), bot.py, storage/*.py, migrations/002_welcome_sent.sql, tests
 
+
+# Phase 2 decisions (spec: Bookkeeping/PHASE2.md; nothing implemented yet)
+
+## P2-D-001: Graph over aiohttp, no Graph SDK
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Call Microsoft Graph v1.0 over HTTPS with aiohttp through one client module (graph.py).
+- Why: Few dependencies; full control of retries and throttling.
+- Alternatives considered: Microsoft Graph SDK for Python.
+- Affects: src/skim/graph.py
+
+## P2-D-002: Graph uses the bot's app registration
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Client-credentials flow, scope https://graph.microsoft.com/.default, tenant/client from the existing service-connection settings; token cached in memory until ~5 min before expiry.
+- Why: 'Bot's app identity'; no new secrets.
+- Alternatives considered: A second app registration.
+- Affects: graph.py, config.py
+
+## P2-D-003: Graph application permissions
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Files.Read.All, Team.ReadBasic.All, Channel.ReadBasic.All, ChannelMessage.Read.All, admin-consented in the test tenant. Least-privilege option for a university: Sites.Selected plus the bot's RSC permissions (e.g. ChannelMessage.Read.Group). Untested: whether /filesFolder accepts Sites.Selected.
+- Why: Test tenant needs speed; a university will not grant tenant-wide read.
+- Alternatives considered: Delegated permissions (need a signed-in user).
+- Affects: Entra app registration, README
+
+## P2-D-004: Metadata only for files
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Store name, path, size, MIME type, timestamps, modifier, webUrl, driveId/itemId, eTag, deleted flag. Never download or store file bytes.
+- Why: Files stay in Teams; we store links.
+- Alternatives considered: Caching content (storage, privacy, copyright).
+- Affects: documents table
+
+## P2-D-005: Delta per drive root, items attributed by path
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Track one delta token per drive on /drives/{id}/root/delta; attribute items to channels by path under each channel's filesFolder. Private/shared channels with their own drive get their own token.
+- Why: SharePoint/OneDrive for Business supports delta only on a drive's root, not sub-folders (to be verified in the tenant).
+- Alternatives considered: Delta per channel folder (not supported); full listing every run (slow, throttling).
+- Affects: sync/files.py, sync_state
+
+## P2-D-006: Resolve paths from stored parents
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Delta often omits parentReference.path; compute paths from stored documents via parent_item_id and fetch unknown parents from Graph. Folder rename/move recomputes descendants.
+- Why: Needed for correct paths on rename/move.
+- Alternatives considered: Trusting path from the response.
+- Affects: graph_normalize.py, sync/files.py
+
+## P2-D-007: Delta token expiry fallback
+- Date: 2026-10-22
+- Made by: spec
+- Decision: On 410 Gone / resyncRequired drop the token, do a full recursive listing, and mark items not seen as deleted.
+- Why: Documented delta-token expiry behaviour.
+- Alternatives considered: Failing the run.
+- Affects: sync/files.py
+
+## P2-D-008: Soft deletes for documents
+- Date: 2026-10-22
+- Made by: spec
+- Decision: deleted=true and deleted_at; rows never removed.
+- Why: History and idempotency (as D-011).
+- Alternatives considered: Hard delete.
+- Affects: documents
+
+## P2-D-009: Jobs run inside the request with a time budget
+- Date: 2026-10-22
+- Made by: spec
+- Decision: POST /jobs/* do their work synchronously within a budget (default 240 s), save progress, return partial when over budget, and are guarded by a DB lock (409 if running).
+- Why: Cloud Run throttles CPU outside requests; Cloud Scheduler can wait for a response.
+- Alternatives considered: Background tasks; a queue (more infrastructure).
+- Affects: jobs_api.py, sync/runner.py
+
+## P2-D-010: Separate JOBS_TOKEN
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Job endpoints use a bearer JOBS_TOKEN (constant-time compare), distinct from DEBUG_TOKEN; not registered when unset. Cloud Scheduler sends it from Secret Manager.
+- Why: Different blast radius from read-only debug endpoints.
+- Alternatives considered: Reusing DEBUG_TOKEN; OIDC auth (possible later).
+- Affects: jobs_api.py, config.py
+
+## P2-D-011: Graph messages are raw-first with provenance
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Store the Graph JSON in raw_activities (source='graph', activity_type='graphMessage', dedupe_key per D-010); messages and raw_activities get a source column (live|graph).
+- Why: Consistency with D-006; we can always tell where a row came from.
+- Alternatives considered: Normalising straight from Graph.
+- Affects: migration 003, storage
+
+## P2-D-012: Dedupe live vs Graph messages; live wins
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Natural key (conversation_id, message_id): the Graph channel-message id is expected to equal the Teams activity id and the channel id the Phase 1 conversations.id (to verify). A Graph copy never overwrites an existing messages row; later live edits/deletes version normally. A Graph message with lastEditedDateTime is stored as version 1 with its current text.
+- Why: No duplicates and no lost live history; older text of pre-install edits is unrecoverable.
+- Alternatives considered: Overwriting with Graph data; separate tables per source.
+- Affects: sync/backfill.py, storage
+
+## P2-D-013: Attachment linking never creates documents
+- Date: 2026-10-22
+- Made by: spec
+- Decision: attachments gets a nullable FK to documents(drive_id,item_id). Match by normalised URL equality (contentUrl vs webUrl), then attachment id equals the GUID inside the document eTag; unmatched stay unlinked until a later run.
+- Why: Prevents duplicate documents.
+- Alternatives considered: Creating documents from attachments.
+- Affects: sync/link.py, migration 003
+
+## P2-D-014: Initial sync via next scheduled run plus best-effort kick
+- Date: 2026-10-22
+- Made by: spec
+- Decision: A team with no sync_state/backfill_state is processed fully by the next scheduled run (<= ~15 min). Install also fires a best-effort background kick; correctness never depends on it.
+- Why: The install handler must stay fast and Cloud Run may throttle background work.
+- Alternatives considered: Blocking the install request; a job queue.
+- Affects: bot.py, jobs
+
+## P2-D-015: Skip removed teams
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Jobs skip teams with removed_at set or no aad_group_id; existing data is kept.
+- Why: Respect uninstalls.
+- Alternatives considered: Deleting data.
+- Affects: sync/*
+
+## P2-D-016: Throttling and retry policy
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Honour Retry-After on 429/503; otherwise exponential backoff with jitter (base 1 s, cap 30 s), max 5 attempts; refresh token once on 401; concurrency cap 4; a Retry-After longer than the remaining budget ends the run as partial.
+- Why: Graph throttles per app and tenant.
+- Alternatives considered: Unbounded retries.
+- Affects: graph.py
+
+## P2-D-017: Follow nextLink verbatim
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Never construct page URLs; channel messages $top=50, files $top=200.
+- Why: Graph paging contract.
+- Alternatives considered: Manual skip/offset paging.
+- Affects: graph.py
+
+## P2-D-018: Migration numbering and order
+- Date: 2026-10-22
+- Made by: spec
+- Decision: Phase 2 migrations start at 003_*.sql and are applied before deploying code that needs them.
+- Why: Lesson from Phase 1 (welcome_sent_at).
+- Alternatives considered: Auto-migrate on startup.
+- Affects: migrations/, deployment
+
