@@ -83,6 +83,7 @@ class PostgresStorage:
                  welcome_sent_at  = case when installed_at is null or removed_at is not null then null else welcome_sent_at end,
                  installed_by_aad = case when installed_at is null or removed_at is not null then $4 else installed_by_aad end,
                  installed_at     = case when installed_at is null or removed_at is not null then $3 else installed_at end,
+                 needs_initial_sync = case when installed_at is null or removed_at is not null then true else needs_initial_sync end,
                  removed_at       = null,
                  pairing_code     = $2
                where id = $1""",

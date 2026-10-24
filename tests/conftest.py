@@ -13,3 +13,42 @@ def load(name: str) -> dict:
 @pytest.fixture(name="load")
 def load_fixture():
     return load
+
+
+async def _pg_store():
+    """A PostgresStorage on a freshly migrated disposable database (TEST_DATABASE_URL), else skip."""
+    import os
+    dsn = os.environ.get("TEST_DATABASE_URL")
+    if not dsn:
+        pytest.skip("TEST_DATABASE_URL not set")
+    import asyncpg
+    from migrate import MIGRATIONS
+    from skim.storage.postgres import PostgresStorage
+
+    conn = await asyncpg.connect(dsn, statement_cache_size=0)
+    await conn.execute("drop schema public cascade; create schema public;")
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        await conn.execute(path.read_text())
+    await conn.execute((MIGRATIONS / "003_phase2.sql").read_text())  # applies cleanly a second time
+    await conn.close()
+    s = PostgresStorage(dsn)
+    await s.start()
+    yield s
+    await s.close()
+
+
+@pytest.fixture
+async def pg_store():
+    async for s in _pg_store():
+        yield s
+
+
+@pytest.fixture(params=["memory", "postgres"])
+async def store(request):
+    """The storage contract runs against both implementations (postgres only when TEST_DATABASE_URL is set)."""
+    if request.param == "memory":
+        from skim.storage.memory import MemoryStorage
+        yield MemoryStorage()
+    else:
+        async for s in _pg_store():
+            yield s

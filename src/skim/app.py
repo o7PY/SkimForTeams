@@ -7,9 +7,12 @@ from aiohttp import web
 from microsoft_agents.authentication.msal import MsalConnectionManager
 from microsoft_agents.hosting.aiohttp import CloudAdapter, jwt_authorization_decorator, start_agent_process
 
-from . import debug_api
+from . import debug_api, jobs_api
 from .bot import Sender, build_agent, current_capture, ingest, setup_activity_logger
 from .config import Settings
+from .graph.auth import MsalTokenProvider
+from .graph.client import GraphClient
+from .jobs.runner import JobRunner
 from .normalize import is_non_standard_channel
 from .storage.base import Storage
 
@@ -25,7 +28,8 @@ def make_storage(settings: Settings) -> Storage:
     return PostgresStorage(settings.database_url)
 
 
-def create_app(settings: Settings, storage: Storage | None = None, sender: Sender | None = None) -> web.Application:
+def create_app(settings: Settings, storage: Storage | None = None, sender: Sender | None = None,
+               graph: GraphClient | None = None) -> web.Application:
     setup_activity_logger()
     storage = storage or make_storage(settings)
     connections = MsalConnectionManager(**settings.sdk_config)
@@ -67,10 +71,23 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
     if settings.debug_token:
         debug_api.register(app, storage, settings.debug_token)
 
+    own_graph = False
+    if settings.jobs_token and graph is None and settings.graph_credentials:
+        graph = GraphClient(MsalTokenProvider(*settings.graph_credentials), base_url=settings.graph_base_url,
+                            max_concurrency=settings.graph_max_concurrency)
+        own_graph = True
+    if settings.jobs_token and graph is not None:
+        jobs_api.register(app, JobRunner(storage, graph, settings.job_time_budget_seconds), settings.jobs_token)
+    else:
+        log.info("Phase 2 jobs disabled: %s", "JOBS_TOKEN is not set" if not settings.jobs_token
+                 else "no Graph credentials")
+
     async def on_startup(_: web.Application) -> None:
         await storage.start()
 
     async def on_cleanup(_: web.Application) -> None:
+        if own_graph and graph is not None:
+            await graph.close()
         await storage.close()
 
     app.on_startup.append(on_startup)

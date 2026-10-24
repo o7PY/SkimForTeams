@@ -1,0 +1,24 @@
+"""POST /jobs/* (FR-207). Registered only when JOBS_TOKEN is set and Graph credentials exist, so otherwise every
+/jobs path is a plain 404 (P2-D-108). Bearer check is constant-time."""
+from __future__ import annotations
+
+import hmac
+
+from aiohttp import web
+
+from .jobs.runner import JobRunner, STEPS
+
+
+def register(app: web.Application, runner: JobRunner, token: str) -> None:
+    expected = f"Bearer {token}".encode()
+
+    def make(job: str):
+        async def handler(request: web.Request) -> web.Response:
+            if not hmac.compare_digest(request.headers.get("Authorization", "").encode(), expected):
+                return web.json_response({"error": "unauthorized"}, status=401)
+            result = await runner.run(job, request.query.get("team_id") or None)
+            return web.json_response(result)
+        return handler
+
+    for job in STEPS:
+        app.router.add_post(f"/jobs/{job}", make(job))

@@ -57,7 +57,7 @@ class MemoryStorage:
         await self.upsert_team({"id": team_id})
         t = self.teams[team_id]
         if t["installed_at"] is None or t["removed_at"] is not None:  # a new install, not a retry/upgrade
-            t.update(installed_at=at, removed_at=None, installed_by_aad=by_aad, welcome_sent_at=None)
+            t.update(installed_at=at, removed_at=None, installed_by_aad=by_aad, welcome_sent_at=None, needs_initial_sync=True)
         t["pairing_code"] = pairing_code
 
     async def claim_welcome(self, team_id, at) -> bool:

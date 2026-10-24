@@ -10,31 +10,6 @@ T0 = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
 DRIVE, FOLDER = "b!drive", "folder1"
 
 
-@pytest.fixture(params=["memory", "postgres"])
-async def store(request):
-    if request.param == "memory":
-        from skim.storage.memory import MemoryStorage
-        yield MemoryStorage()
-        return
-    dsn = os.environ.get("TEST_DATABASE_URL")
-    if not dsn:
-        pytest.skip("TEST_DATABASE_URL not set")
-    import asyncpg
-    from migrate import MIGRATIONS
-    from skim.storage.postgres import PostgresStorage
-
-    conn = await asyncpg.connect(dsn, statement_cache_size=0)
-    await conn.execute("drop schema public cascade; create schema public;")
-    for path in sorted(MIGRATIONS.glob("*.sql")):
-        await conn.execute(path.read_text())
-    await conn.execute((MIGRATIONS / "003_phase2.sql").read_text())  # applies cleanly a second time
-    await conn.close()
-    s = PostgresStorage(dsn)
-    await s.start()
-    yield s
-    await s.close()
-
-
 async def seed(s):
     await s.upsert_team({"id": "19:team@thread.tacv2", "aad_group_id": "gid-1", "name": "T"})
     await s.upsert_channel({"id": "19:chan@thread.tacv2", "team_id": "19:team@thread.tacv2", "display_name": "General",

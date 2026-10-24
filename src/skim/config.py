@@ -28,6 +28,14 @@ class Settings:
     pairing_secret: str
     log_message_text: bool
     anonymous_allowed: bool
+    # Phase 2 (all optional: without Graph credentials or JOBS_TOKEN the job endpoints are simply absent)
+    jobs_token: str | None = field(default=None, repr=False)
+    graph_credentials: tuple[str, str, str] | None = field(default=None, repr=False)  # (client id, secret, tenant)
+    graph_base_url: str = "https://graph.microsoft.com/v1.0"
+    graph_max_concurrency: int = 4
+    job_time_budget_seconds: float = 240.0
+    backfill_since_days: int = 180
+    backfill_max_messages_per_channel: int = 2000
     # Passed to the SDK's MsalConnectionManager / AgentApplication.
     sdk_config: dict = field(default_factory=dict, repr=False)
 
@@ -54,6 +62,26 @@ class Settings:
         except ValueError:
             port = 8080
             problems.append("PORT must be an integer")
+        def num(name: str, default, cast, minimum):
+            raw = env.get(name)
+            if raw is None or raw == "":
+                return default
+            try:
+                v = cast(raw)
+            except ValueError:
+                problems.append(f"{name} must be a number")
+                return default
+            if v < minimum:
+                problems.append(f"{name} must be >= {minimum}")
+                return default
+            return v
+
+        concurrency = num("GRAPH_MAX_CONCURRENCY", 4, int, 1)
+        budget = num("JOB_TIME_BUDGET_SECONDS", 240.0, float, 1)
+        since_days = num("BACKFILL_SINCE_DAYS", 180, int, 1)
+        max_msgs = num("BACKFILL_MAX_MESSAGES_PER_CHANNEL", 2000, int, 1)
+        creds = tuple(env.get(_PREFIX + k, "") for k in ("CLIENTID", "CLIENTSECRET", "TENANTID"))
+        graph_credentials = creds if all(creds) and not anonymous else None
         if problems:
             raise ConfigError("Invalid configuration:\n  - " + "\n  - ".join(problems))
 
@@ -74,5 +102,12 @@ class Settings:
             pairing_secret=env["PAIRING_SECRET"],
             log_message_text=_flag(env, "LOG_MESSAGE_TEXT", True),
             anonymous_allowed=anonymous,
+            jobs_token=env.get("JOBS_TOKEN") or None,
+            graph_credentials=graph_credentials,
+            graph_base_url=(env.get("GRAPH_BASE_URL") or "https://graph.microsoft.com/v1.0").rstrip("/"),
+            graph_max_concurrency=concurrency,
+            job_time_budget_seconds=budget,
+            backfill_since_days=since_days,
+            backfill_max_messages_per_channel=max_msgs,
             sdk_config=load_configuration_from_env(sdk_env),
         )
