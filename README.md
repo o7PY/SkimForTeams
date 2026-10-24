@@ -65,8 +65,10 @@ Graph needs the bot's app registration to have the application roles `Channel.Re
 
 **Jobs** (`Authorization: Bearer $JOBS_TOKEN`, JSON in, JSON out; one at a time, a second caller gets `busy`):
 `POST /jobs/discover` · `/jobs/sync-files` · `/jobs/backfill?team_id=&since_days=&force=true` ·
-`/jobs/refill-empty` · `/jobs/link-attachments` · `/jobs/run-all` (discover, sync-files, backfill of teams that
-still need it, refill of empty live messages, attachment linking). Result:
+`/jobs/enrich-messages` · `/jobs/refill-empty` · `/jobs/link-attachments` · `/jobs/run-all` (discover, sync-files,
+backfill of teams that still need it, enrichment of live messages from the Graph message delta feed, refill of empty
+live messages, attachment linking). Live Teams events never carry a post's subject; only Graph does, so a subject
+appears after the next enrich run. Result:
 `{"status":"ok|partial|busy|error","job_run_id":…,"stats":{…},"next":true|false}`; `partial` means "call again".
 Errors come back as JSON with `error_class` (HTTP 500) and a failed row in `job_runs`. `force=true` on backfill drops
 saved cursors and starts over; it never duplicates rows.
