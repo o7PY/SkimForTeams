@@ -1,6 +1,7 @@
 """Storage interface. Implementations: memory.py (tests/local), postgres.py."""
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -36,3 +37,51 @@ class Storage(Protocol):
     async def list_messages(self, limit: int, team_id: str | None, conversation_id: str | None) -> list[dict]: ...
     async def get_message(self, conversation_id: str, message_id: str) -> dict[str, Any] | None: ...
     async def list_teams(self) -> list[dict]: ...
+
+    # --- Phase 2 (all Graph-side state) ---
+    async def insert_graph_raw(self, row: dict) -> tuple[int, bool]:
+        """Store a Graph payload (kind, endpoint, item_key, dedupe_key, payload). (id, inserted); dedupe on dedupe_key."""
+
+    async def list_sync_teams(self) -> list[dict]:
+        """Teams with an aad_group_id and no removed_at."""
+
+    async def update_team(self, team_id: str, **fields: Any) -> None:
+        """Set needs_initial_sync / last_discovered_at / last_files_sync_at / last_backfill_at."""
+
+    async def upsert_channel(self, ch: dict) -> None:
+        """Insert/update a channel; None values never overwrite (so sync_error is only set via update_channel)."""
+
+    async def update_channel(self, channel_id: str, **fields: Any) -> None: ...
+    async def list_channels(self, team_id: str | None = None) -> list[dict]: ...
+
+    async def get_document(self, drive_id: str, item_id: str) -> dict | None: ...
+    async def get_document_by_id(self, document_id: int) -> dict | None: ...
+    async def upsert_document(self, doc: dict) -> int:
+        """Insert/update by (drive_id, item_id); returns the document id. Keeps first_seen_at."""
+
+    async def list_documents(self, team_id: str | None = None, channel_id: str | None = None,
+                             include_deleted: bool = False, limit: int = 100) -> list[dict]: ...
+    async def list_child_documents(self, drive_id: str, parent_item_id: str) -> list[dict]: ...
+    async def soft_delete_unseen(self, channel_id: str, seen_since: datetime, at: datetime) -> list[dict]:
+        """Soft-delete live documents of the channel with last_seen_at < seen_since. Returns the affected rows."""
+
+    async def add_document_event(self, ev: dict) -> int: ...
+    async def list_document_events(self, document_id: int) -> list[dict]: ...
+
+    async def get_sync_state(self, key: str) -> dict | None: ...
+    async def put_sync_state(self, key: str, *, delta_link: str | None = None, cursor: dict | None = None,
+                             last_status: str | None = None, last_error: str | None = None) -> None:
+        """Replace the whole row for key."""
+    async def delete_sync_state(self, key: str) -> None: ...
+    async def list_sync_state(self) -> list[dict]: ...
+
+    async def start_job_run(self, job: str) -> int: ...
+    async def finish_job_run(self, run_id: int, status: str, stats: dict, error: str | None = None) -> None: ...
+    async def latest_job_runs(self) -> list[dict]:
+        """Most recent run per job."""
+
+    def job_lock(self, name: str) -> AbstractAsyncContextManager[bool]:
+        """`async with storage.job_lock(n) as got:` got=False if another holder has it (P2-D-110)."""
+
+    async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None: ...
+    async def list_document_links(self, document_id: int) -> list[dict]: ...
