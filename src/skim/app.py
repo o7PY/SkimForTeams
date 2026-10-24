@@ -80,7 +80,9 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
                             max_concurrency=settings.graph_max_concurrency)
         own_graph = True
     if settings.jobs_token and graph is not None:
-        jobs_api.register(app, JobRunner(storage, graph, settings.job_time_budget_seconds), settings.jobs_token)
+        jobs_api.register(app, JobRunner(storage, graph, settings.job_time_budget_seconds,
+                                  backfill_since_days=settings.backfill_since_days,
+                                  backfill_max_messages=settings.backfill_max_messages_per_channel), settings.jobs_token)
     else:
         log.info("Phase 2 jobs disabled: %s", "JOBS_TOKEN is not set" if not settings.jobs_token
                  else "no Graph credentials")

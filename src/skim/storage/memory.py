@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from ..normalize import MessageEvent
+from ..normalize_graph import fill_empty
 
 
 class MemoryStorage:
@@ -312,6 +313,32 @@ class MemoryStorage:
         finally:
             if got and self._locks.get(name, (None,))[0] == holder:
                 del self._locks[name]
+
+    async def backfill_message(self, message, attachments, reactions) -> str:
+        key = (message["conversation_id"], message["message_id"])
+        now = self._now()
+        cur = self.messages.get(key)
+        if cur is None:
+            self.messages[key] = {**message, "current_version": 1, "raw_activity_id": None, "source": "graph",
+                                  "backfilled_at": now}
+            self.versions.append({"conversation_id": key[0], "message_id": key[1], "version": 1, "text": message["text"],
+                                  "html": message["html"], "event": "created", "at": message["created_at"] or now,
+                                  "raw_activity_id": None})
+            await self.add_attachments(attachments, None)
+            await self.add_reactions(reactions, None)
+            return "created"
+        fills = fill_empty(cur, message)
+        cur.update(fills)
+        changed = bool(fills)
+        if attachments and not any((a["conversation_id"], a["message_id"]) == key for a in self.attachments):
+            await self.add_attachments(attachments, None)
+            changed = True
+        if reactions and not any((r["conversation_id"], r["message_id"]) == key for r in self.reactions):
+            await self.add_reactions(reactions, None)
+            changed = True
+        if changed:
+            cur["backfilled_at"] = now
+        return "filled" if changed else "unchanged"
 
     async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None:
         if not any(a == attachment_id and d == document_id for a, d, _ in self.links):

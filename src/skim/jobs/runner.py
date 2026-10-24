@@ -14,6 +14,7 @@ from ..graph.auth import GraphAuthError
 from ..graph.client import GraphClient, GraphError
 from ..storage.base import Storage
 from .common import Budget, JobContext
+from .backfill import backfill_team
 from .discover import discover_team
 from .files_sync import delta_sync_channel, full_sync_channel
 
@@ -74,7 +75,7 @@ async def step_sync_files(ctx: JobContext, team_id: str | None) -> str:
 
 
 async def step_run_all(ctx: JobContext, team_id: str | None) -> str:
-    """discover -> sync-files (-> backfill -> link attachments: added in T8/T9)."""
+    """discover -> sync-files -> backfill (initial-sync teams only) -> link attachments (T9)."""
     results = [await step_discover(ctx, team_id)]
     results.append(await step_sync_files(ctx, team_id))
     for extra in EXTRA_RUN_ALL_STEPS:
@@ -82,22 +83,43 @@ async def step_run_all(ctx: JobContext, team_id: str | None) -> str:
     return "partial" if "partial" in results else "ok"
 
 
-EXTRA_RUN_ALL_STEPS: list[Step] = []
-STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_files, "run-all": step_run_all}
+async def step_backfill(ctx: JobContext, team_id: str | None, force: bool = True) -> str:
+    """Message history. /jobs/backfill is explicit (force: every selected team); run-all only does teams that still
+    need their initial sync (P2-D-117/128)."""
+    partial = False
+    for team in select_teams(await ctx.storage.list_sync_teams(), team_id):
+        if not force and not team.get("needs_initial_sync"):
+            continue
+        if ctx.budget.expired():
+            return "partial"
+        status = await backfill_team(ctx, team, ctx.options["since_days"], ctx.options["max_messages"], error_text)
+        partial = partial or status == "partial"
+    return "partial" if partial else "ok"
+
+
+async def step_backfill_initial(ctx: JobContext, team_id: str | None) -> str:
+    return await step_backfill(ctx, team_id, force=False)
+
+
+EXTRA_RUN_ALL_STEPS: list[Step] = [step_backfill_initial]
+STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_files, "backfill": step_backfill,
+                          "run-all": step_run_all}
 
 
 # ---------------------------------------------------------------------------- runner
 class JobRunner:
     def __init__(self, storage: Storage, graph: GraphClient, budget_seconds: float,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, backfill_since_days: int = 180,
+                 backfill_max_messages: int = 2000):
         self.storage, self.graph, self.budget_seconds, self._clock = storage, graph, budget_seconds, clock
+        self.backfill_since_days, self.backfill_max_messages = backfill_since_days, backfill_max_messages
 
-    async def run(self, job: str, team_id: str | None = None) -> dict:
+    async def run(self, job: str, team_id: str | None = None, since_days: int | None = None) -> dict:
         """Never raises: a failure becomes {status:"error", job_run_id, error_class} (and a failed job_runs row
         when the database still allows one) instead of a bare 500."""
         started = self._clock()
         try:
-            result = await self._run(job, team_id, started)
+            result = await self._run(job, team_id, started, since_days)
         except Exception as e:  # infrastructure failure (lock table missing, DB down, ...): not a step failure
             log.exception("job %s could not run", job)
             result = {"status": "error", "job_run_id": None, "stats": {}, "next": False,
@@ -114,14 +136,16 @@ class JobRunner:
         except Exception:  # the database itself is the problem; the JSON response and the log still say so
             return None
 
-    async def _run(self, job: str, team_id: str | None, started: float) -> dict:
+    async def _run(self, job: str, team_id: str | None, started: float, since_days: int | None) -> dict:
         step = STEPS[job]
         async with self.storage.job_lock(LOCK, self.budget_seconds + LEASE_MARGIN_SECONDS) as got:
             run_id = await self.storage.start_job_run(job)
             if not got:
                 await self.storage.finish_job_run(run_id, "busy", {})
                 return {"status": "busy", "job_run_id": run_id, "stats": {}, "next": False}
-            ctx = JobContext(self.storage, self.graph, Budget(self.budget_seconds, self._clock))
+            ctx = JobContext(self.storage, self.graph, Budget(self.budget_seconds, self._clock),
+                             options={"since_days": since_days or self.backfill_since_days,
+                                      "max_messages": self.backfill_max_messages})
             before = dict(self.graph.stats)
             error: str | None = None
             error_class: str | None = None

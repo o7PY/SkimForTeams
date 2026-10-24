@@ -30,6 +30,12 @@ def fake_tenant() -> FakeGraph:
     f.add(f"/drives/{DRIVE}/items/{FOLDER}/children", {"value": [
         {"id": "a", "name": "syllabus.pdf", "size": 5, "eTag": "e", "file": {"mimeType": "application/pdf"},
          "webUrl": "https://x.sharepoint.com/General/syllabus.pdf", "parentReference": {"driveId": DRIVE, "id": FOLDER}}]})
+    f.add(f"/teams/{GID}/channels/{CHAN}/messages", {"value": [
+        {"id": "m1", "messageType": "message", "createdDateTime": "2999-01-01T00:00:00Z", "subject": "Hello",
+         "from": {"user": {"id": "u1", "displayName": "Prof"}}, "body": {"contentType": "html", "content": "<p>hi</p>"}}]})
+    f.add(f"/teams/{GID}/channels/{CHAN}/messages/m1/replies", {"value": [
+        {"id": "r1", "replyToId": "m1", "messageType": "message", "createdDateTime": "2999-01-01T00:01:00Z",
+         "body": {"contentType": "text", "content": "re"}}]})
     return f
 
 
@@ -139,6 +145,7 @@ async def test_a_failing_channel_is_recorded_and_the_run_continues(env):
         {"id": CHAN, "displayName": "General", "membershipType": "standard"},
         {"id": "19:bad@thread.tacv2", "displayName": "Bad", "membershipType": "standard"}]})
     fake.add(f"/teams/{GID}/channels/19:bad@thread.tacv2/filesFolder", {"error": {"code": "accessDenied"}}, status=403)
+    fake.add(f"/teams/{GID}/channels/19:bad@thread.tacv2/messages", {"value": []})  # its history is fine; only Files fails
     body = await (await client.post("/jobs/run-all", headers=AUTH)).json()
     assert body["status"] == "ok" and body["stats"]["channel_errors"] == 1 and body["stats"]["created"] == 1
     assert "accessDenied" in store.channels["19:bad@thread.tacv2"]["sync_error"] and store.channels[CHAN]["sync_error"] is None
@@ -256,3 +263,29 @@ async def test_error_with_database_down_still_returns_json(env):
     body = await (await client.post("/jobs/run-all", headers=AUTH)).json()
     assert body == {"status": "error", "job_run_id": None, "stats": {}, "next": False, "error": "ConnectionError",
                     "error_class": "ConnectionError"}
+
+
+async def test_run_all_backfills_initial_sync_teams_once(env):
+    client, store, fake, graph = env
+    body = await (await client.post("/jobs/run-all", headers=AUTH)).json()
+    assert body["status"] == "ok" and body["stats"]["messages_created"] == 2 and body["stats"]["replies_stored"] == 1
+    assert store.teams[TEAM]["needs_initial_sync"] is False and store.teams[TEAM]["last_backfill_at"] is not None
+    assert {k[1] for k in store.messages} == {"m1", "r1"} and store.messages[(CHAN, "r1")]["reply_to_id"] == "m1"
+    n = fake.count(f"/teams/{GID}/channels/{CHAN}/messages")
+    body = await (await client.post("/jobs/run-all", headers=AUTH)).json()
+    assert fake.count(f"/teams/{GID}/channels/{CHAN}/messages") == n  # no more backfill once the flag is cleared
+    assert not body["stats"].get("messages_created")
+    assert "19:priv@thread.tacv2" not in str(fake.requests)  # private channel never touched
+
+
+async def test_backfill_endpoint_is_explicit_and_validates_since_days(env):
+    client, store, fake, graph = env
+    await client.post("/jobs/run-all", headers=AUTH)
+    n = fake.count(f"/teams/{GID}/channels/{CHAN}/messages")
+    r = await client.post("/jobs/backfill?team_id=" + TEAM + "&since_days=30", headers=AUTH)
+    body = await r.json()
+    assert r.status == 200 and body["status"] == "ok" and fake.count(f"/teams/{GID}/channels/{CHAN}/messages") == n + 1
+    assert body["stats"]["messages_unchanged"] == 2
+    assert (await client.post("/jobs/backfill?since_days=abc", headers=AUTH)).status == 400
+    assert (await client.post("/jobs/backfill?since_days=0", headers=AUTH)).status == 400
+    assert (await client.post("/jobs/backfill", headers={"Authorization": "Bearer x"})).status == 401

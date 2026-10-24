@@ -16,7 +16,10 @@ def register(app: web.Application, runner: JobRunner, token: str) -> None:
         async def handler(request: web.Request) -> web.Response:
             if not hmac.compare_digest(request.headers.get("Authorization", "").encode(), expected):
                 return web.json_response({"error": "unauthorized"}, status=401)
-            result = await runner.run(job, request.query.get("team_id") or None)
+            since = request.query.get("since_days")
+            if since is not None and not (since.isdigit() and int(since) > 0):
+                return web.json_response({"error": "since_days must be a positive integer"}, status=400)
+            result = await runner.run(job, request.query.get("team_id") or None, int(since) if since else None)
             return web.json_response(result, status=500 if result["status"] == "error" else 200)  # JSON either way
         return handler
 

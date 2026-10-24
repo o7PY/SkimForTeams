@@ -33,6 +33,7 @@ class JobContext:
     budget: Budget
     stats: Counter = field(default_factory=Counter)
     clock: Callable[[], datetime] = utcnow
+    options: dict = field(default_factory=dict)  # since_days, max_messages, force_backfill
 
 
 async def store_raw(storage: Storage, kind: str, endpoint: str, item_key: str | None, payload: Any) -> int:

@@ -11,6 +11,7 @@ from typing import Any
 import asyncpg
 
 from ..normalize import MessageEvent
+from ..normalize_graph import fill_empty
 
 log = logging.getLogger("skim.storage")
 
@@ -412,6 +413,55 @@ class PostgresStorage:
         finally:
             if got == holder:
                 await self.pool.execute("delete from job_locks where name=$1 and holder=$2", name, holder)
+
+    async def backfill_message(self, message, attachments, reactions) -> str:
+        assert self.pool
+        cid, mid = message["conversation_id"], message["message_id"]
+        async with self.pool.acquire() as conn, conn.transaction():
+            inserted = await conn.fetchval(
+                """insert into messages (conversation_id, message_id, reply_to_id, from_aad_id, from_name, text, html,
+                     importance, mentions, subject, created_at, last_edited_at, deleted_at, source, backfilled_at)
+                   values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'graph',now())
+                   on conflict do nothing returning true""",
+                cid, mid, message["reply_to_id"], message["from_aad_id"], message["from_name"], message["text"],
+                message["html"], message["importance"], message["mentions"], message["subject"],
+                message["created_at"], message["last_edited_at"], message["deleted_at"])
+            if inserted:
+                await conn.execute(
+                    """insert into message_versions (conversation_id, message_id, version, text, html, event, at)
+                       values ($1,$2,1,$3,$4,'created',coalesce($5, now()))""",
+                    cid, mid, message["text"], message["html"], message["created_at"])
+                result = "created"
+            else:
+                before = dict(await conn.fetchrow(
+                    "select * from messages where conversation_id=$1 and message_id=$2 for update", cid, mid))
+                fills = fill_empty(before, message)
+                result = "unchanged"
+                if fills:
+                    sets = ", ".join(f"{k}=${i + 3}" for i, k in enumerate(fills))
+                    await conn.execute(f"update messages set {sets} where conversation_id=$1 and message_id=$2",
+                                       cid, mid, *fills.values())
+                    result = "filled"
+            have_att = await conn.fetchval(
+                "select exists(select 1 from attachments where conversation_id=$1 and message_id=$2)", cid, mid)
+            have_rx = await conn.fetchval(
+                "select exists(select 1 from reactions where conversation_id=$1 and message_id=$2)", cid, mid)
+            if attachments and not have_att:
+                for r in attachments:
+                    await conn.execute(
+                        """insert into attachments (conversation_id, message_id, content_type, name, content_url, payload)
+                           values ($1,$2,$3,$4,$5,$6)""", cid, mid, r["content_type"], r["name"], r["content_url"], r["payload"])
+                result = result if result == "created" else "filled"
+            if reactions and not have_rx:
+                for r in reactions:
+                    await conn.execute(
+                        """insert into reactions (conversation_id, message_id, user_aad_id, user_name, reaction_type, action, at)
+                           values ($1,$2,$3,$4,$5,$6,$7)""", cid, mid, r["user_aad_id"], r["user_name"],
+                        r["reaction_type"], r["action"], r["at"])
+                result = result if result == "created" else "filled"
+            if result == "filled":
+                await conn.execute("update messages set backfilled_at=now() where conversation_id=$1 and message_id=$2", cid, mid)
+            return result
 
     async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None:
         assert self.pool

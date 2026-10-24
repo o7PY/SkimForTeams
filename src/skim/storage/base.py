@@ -86,5 +86,10 @@ class Storage(Protocol):
         """`async with storage.job_lock(n, lease) as got:` got=False if another holder has an unexpired lease
         (P2-D-110, P2-D-130). The lease must outlive the job; a crashed holder is superseded after it."""
 
+    async def backfill_message(self, message: dict, attachments: list[dict], reactions: list[dict]) -> str:
+        """Insert a Graph-sourced message (source='graph') or, if the row exists, only fill its empty columns
+        (P2-D-114). Attachments/reactions are added only when the message has none. Returns
+        'created' | 'filled' | 'unchanged'."""
+
     async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None: ...
     async def list_document_links(self, document_id: int) -> list[dict]: ...
