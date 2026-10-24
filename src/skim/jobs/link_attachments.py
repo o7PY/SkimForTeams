@@ -2,7 +2,8 @@
 
 Channel file attachments are contentType=reference with a SharePoint contentUrl and no driveItem id. Method 1:
 normalised contentUrl == documents.web_url_norm within the team (`web_url`). Method 2: the part of the URL path
-below the channel's folder name == documents.path within the channel (`name_path`, case-insensitive). Pure
+below the channel's folder name == documents.path within the channel (`name_path`, case-insensitive) AND the URL's
+host is the document's own SharePoint host (an attachment is author-controlled data). Pure
 database work (no Graph calls); unmatched attachments are simply retried on the next run.
 """
 from __future__ import annotations
@@ -28,6 +29,10 @@ def relative_path_under_folder(content_url: str, folder_name: str | None) -> str
     return None
 
 
+def _same_host(content_url: str, doc_url_norm: str | None) -> bool:
+    return bool(doc_url_norm) and urlsplit(content_url).netloc.lower() == urlsplit(doc_url_norm).netloc
+
+
 async def link_attachments(ctx: JobContext, team_id: str | None = None) -> None:
     st, store = ctx.stats, ctx.storage
     channels: dict[str, dict] = {}
@@ -44,6 +49,10 @@ async def link_attachments(ctx: JobContext, team_id: str | None = None) -> None:
             rel = relative_path_under_folder(att["content_url"], ch.get("display_name"))
             if rel:
                 doc, method = await store.find_document_by_path(att["conversation_id"], rel), "name_path"
+                if doc is not None and not _same_host(att["content_url"], doc.get("web_url_norm")):
+                    # A post can carry any URL: a lookalike path on another host must not link to our file.
+                    st["links_rejected_host"] += 1
+                    doc = None
         if doc is None:
             st["attachments_unmatched"] += 1
             continue

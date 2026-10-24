@@ -125,3 +125,14 @@ async def test_graph_fixture_attachment_links_to_its_document(store):
     await store.backfill_message(row["message"], row["attachments"], row["reactions"])
     await link(store)
     assert [m for m, _ in await links_of(store, d)] == [row["message"]["message_id"]]
+
+
+async def test_name_path_fallback_rejects_a_lookalike_url_on_another_host(store):
+    """Attachment URLs are author-controlled: same folder/file path on a foreign host must not link."""
+    await seed(store)
+    d = await add_doc(store, "w3", "Lectures/week3.pdf", "https://example.sharepoint.com/:b:/s/Team/EaBcDeF")
+    await post(store, "evil", "https://evil.example.net/sites/Team/Shared%20Documents/General/Lectures/week3.pdf")
+    await post(store, "good", f"{SITE}/Lectures/week3.pdf")
+    stats = await link(store)
+    assert await links_of(store, d) == [("good", "name_path")] and stats["links_rejected_host"] == 1
+    assert stats["attachments_unmatched"] == 1
