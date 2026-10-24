@@ -30,6 +30,7 @@ async def _pg_store():
     for path in sorted(MIGRATIONS.glob("*.sql")):
         await conn.execute(path.read_text())
     await conn.execute((MIGRATIONS / "003_phase2.sql").read_text())  # applies cleanly a second time
+    await conn.execute((MIGRATIONS / "004_job_locks.sql").read_text())
     await conn.close()
     s = PostgresStorage(dsn)
     await s.start()

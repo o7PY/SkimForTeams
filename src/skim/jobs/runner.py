@@ -1,7 +1,7 @@
 """Job runner: one job at a time, time-boxed, recorded in job_runs (P2-D-107/109/110, FR-208).
 
-A single advisory lock covers every job kind (stricter than "one of each kind": sync-files and run-all must
-not touch the same sync_state concurrently - P2-D-126). A caller that finds it held gets status "busy" at once.
+A single lease lock (table job_locks, P2-D-130) covers every job kind (stricter than "one of each kind": sync-files
+and run-all must not touch the same sync_state concurrently - P2-D-126). A caller that finds it held gets "busy".
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from .files_sync import delta_sync_channel, full_sync_channel
 
 log = logging.getLogger("skim.jobs")
 LOCK = "jobs"
+LEASE_MARGIN_SECONDS = 120.0  # lease = time budget + margin (an in-flight request plus retries may overrun)
 
 Step = Callable[[JobContext, str | None], Awaitable[str]]  # returns "ok" | "partial"
 
@@ -94,7 +95,7 @@ class JobRunner:
     async def run(self, job: str, team_id: str | None = None) -> dict:
         step = STEPS[job]
         started = self._clock()
-        async with self.storage.job_lock(LOCK) as got:
+        async with self.storage.job_lock(LOCK, self.budget_seconds + LEASE_MARGIN_SECONDS) as got:
             run_id = await self.storage.start_job_run(job)
             if not got:
                 await self.storage.finish_job_run(run_id, "busy", {})

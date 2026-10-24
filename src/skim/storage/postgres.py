@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 import logging
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -388,23 +389,23 @@ class PostgresStorage:
             "select distinct on (job) * from job_runs order by job, started_at desc, id desc")]
 
     @asynccontextmanager
-    async def job_lock(self, name: str):
-        """Transaction-scoped advisory lock held on a dedicated connection for the whole block.
+    async def job_lock(self, name: str, lease_seconds: float = 300.0):
+        """Lease row in `job_locks`: one atomic upsert that only wins if the row is missing or expired.
 
-        Session-level locks are unreliable behind Supabase's transaction pooler (:6543), so the lock lives
-        in an open transaction instead (released by the rollback)."""
+        No connection or transaction is held while the job runs, so it is safe behind Supabase's transaction
+        pooler (:6543). Released by deleting our own row; a crashed holder is superseded once the lease expires."""
         assert self.pool
-        conn = await self.pool.acquire()
-        tx = conn.transaction()
-        await tx.start()
+        holder = uuid.uuid4().hex
+        got = await self.pool.fetchval(
+            """insert into job_locks (name, holder, expires_at) values ($1, $2, now() + make_interval(secs => $3))
+               on conflict (name) do update set holder = excluded.holder, expires_at = excluded.expires_at
+               where job_locks.expires_at <= now()
+               returning holder""", name, holder, float(lease_seconds))
         try:
-            got = await conn.fetchval("select pg_try_advisory_xact_lock(hashtext($1))", f"skim:{name}")
-            yield bool(got)
+            yield got == holder
         finally:
-            try:
-                await tx.rollback()
-            finally:
-                await self.pool.release(conn)
+            if got == holder:
+                await self.pool.execute("delete from job_locks where name=$1 and holder=$2", name, holder)
 
     async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None:
         assert self.pool

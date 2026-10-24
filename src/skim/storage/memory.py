@@ -1,6 +1,8 @@
 """In-memory Storage for tests and local dev."""
 from __future__ import annotations
 
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -26,7 +28,8 @@ class MemoryStorage:
         self.sync_state: dict[str, dict] = {}
         self.job_runs: list[dict] = []
         self.links: set[tuple[int, int, str]] = set()
-        self._locks: set[str] = set()
+        self._locks: dict[str, tuple[str, float]] = {}  # name -> (holder, expires_at)
+        self._lock_clock = time.monotonic
 
     async def start(self) -> None: ...
     async def close(self) -> None: ...
@@ -295,15 +298,17 @@ class MemoryStorage:
         return [dict(latest[j]) for j in sorted(latest)]
 
     @asynccontextmanager
-    async def job_lock(self, name: str):
-        got = name not in self._locks
+    async def job_lock(self, name: str, lease_seconds: float = 300.0):
+        holder = uuid.uuid4().hex
+        now = self._lock_clock()
+        got = name not in self._locks or self._locks[name][1] <= now
         if got:
-            self._locks.add(name)
+            self._locks[name] = (holder, now + lease_seconds)
         try:
             yield got
         finally:
-            if got:
-                self._locks.discard(name)
+            if got and self._locks.get(name, (None,))[0] == holder:
+                del self._locks[name]
 
     async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None:
         if not any(a == attachment_id and d == document_id for a, d, _ in self.links):

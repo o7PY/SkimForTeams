@@ -21,6 +21,7 @@ async def test_full_sequence_against_postgres(load):
     await conn.execute((MIGRATIONS / "001_init.sql").read_text())
     await conn.execute((MIGRATIONS / "002_welcome_sent.sql").read_text())
     await conn.execute((MIGRATIONS / "003_phase2.sql").read_text())
+    await conn.execute((MIGRATIONS / "004_job_locks.sql").read_text())
     await conn.close()
 
     settings = Settings.from_env({"CONNECTIONS__SERVICE_CONNECTION__SETTINGS__ANONYMOUS_ALLOWED": "true",

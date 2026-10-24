@@ -146,3 +146,49 @@ async def test_attachment_links(store):
     await store.add_attachment_link(att_id, i, "web_url")  # idempotent
     links = await store.list_document_links(i)
     assert len(links) == 1 and links[0]["match_method"] == "web_url" and links[0]["name"] == "a.pdf"
+
+
+async def test_job_lock_concurrent_acquire_has_one_winner(store):
+    import asyncio
+
+    async def attempt():
+        async with store.job_lock("jobs", 30) as got:
+            await asyncio.sleep(0.2)  # hold it while the others try
+            return got
+
+    results = await asyncio.gather(*[attempt() for _ in range(8)])
+    assert results.count(True) == 1 and results.count(False) == 7
+    async with store.job_lock("jobs", 30) as again:  # released afterwards
+        assert again is True
+
+
+async def test_job_lock_expired_lease_can_be_taken_over(store):
+    import asyncio
+
+    async with store.job_lock("jobs", 0.2) as crashed:  # holder that "crashed" (never releases in time)
+        assert crashed is True
+        async with store.job_lock("jobs", 30) as early:
+            assert early is False  # lease still valid
+        await asyncio.sleep(0.4)
+        async with store.job_lock("jobs", 30) as taken:
+            assert taken is True  # expired: taken over
+            # the stale holder finishing now must not release the new holder's lease
+        async with store.job_lock("jobs", 30) as after_takeover:
+            assert after_takeover is True
+    # leaving the stale block must not have deleted anyone else's lease; and the lock is free again
+    async with store.job_lock("jobs", 30) as free:
+        assert free is True
+
+
+async def test_stale_holder_release_keeps_new_lease(store):
+    import asyncio
+
+    stale = store.job_lock("jobs", 0.1)
+    assert await stale.__aenter__() is True
+    await asyncio.sleep(0.3)
+    fresh = store.job_lock("jobs", 30)
+    assert await fresh.__aenter__() is True
+    await stale.__aexit__(None, None, None)  # must not delete fresh's lease
+    async with store.job_lock("jobs", 30) as contender:
+        assert contender is False
+    await fresh.__aexit__(None, None, None)
