@@ -225,3 +225,91 @@ async def test_other_graph_errors_propagate_and_leave_state_untouched():
     with pytest.raises(GraphAuthError):
         await delta(fake, store)
     assert store.sync_state[f"folder:{CH}"]["delta_link"].endswith("token=START")
+
+
+# ---- net-state semantics (delta reports the net result between two syncs, not the history)
+async def test_delete_and_restore_between_syncs_is_one_modified_event():
+    """Item deleted and restored from the recycle bin between two syncs: delta only shows the live item with a new
+    eTag, so the log says `modified`, never deleted/restored (P2 doc: delta is net state)."""
+    store = await synced()
+    await delta(feed(FakeGraph(), [item("w3", "week3.pdf", "L", etag="e2")]), store)
+    assert events(store, "w3") == ["created", "modified"]
+    assert (await store.get_document(DRIVE, "w3"))["deleted_at"] is None
+
+
+async def test_delete_and_restore_between_syncs_with_same_etag_is_nothing():
+    store = await synced()
+    _, ctx = await delta(feed(FakeGraph(), [item("w3", "week3.pdf", "L")]), store)
+    assert events(store, "w3") == ["created"] and ctx.stats["unchanged"] == 1
+
+
+async def test_rename_and_rename_back_between_syncs_is_modified_or_nothing():
+    store = await synced()
+    await delta(feed(FakeGraph(), [item("a", "syllabus.pdf", FOLDER, etag="e2")]), store)  # same name, new eTag
+    assert events(store, "a") == ["created", "modified"]
+    _, ctx = await delta(feed(FakeGraph(), [item("a", "syllabus.pdf", FOLDER, etag="e2")], token="NEXT"), store)
+    assert events(store, "a") == ["created", "modified"] and ctx.stats["unchanged"] == 1
+
+
+# ---- event payloads and folder cascades
+async def test_renamed_and_moved_events_store_old_and_new_name_and_path():
+    store = await synced()
+    await delta(feed(FakeGraph(), [item("w3", "week3-final.pdf", "L")]), store)       # renamed in place
+    await delta(feed(FakeGraph(), [item("w3", "week3-final.pdf", "S")], token="NEXT"), store)  # moved into Slides
+    d = await store.get_document(DRIVE, "w3")
+    ren, mov = [e for e in await store.list_document_events(d["id"]) if e["event"] in ("renamed", "moved")]
+    assert (ren["old_name"], ren["new_name"], ren["old_path"], ren["new_path"]) == (
+        "week3.pdf", "week3-final.pdf", "Lectures/week3.pdf", "Lectures/week3-final.pdf")
+    assert (mov["event"], mov["old_name"], mov["new_name"], mov["old_path"], mov["new_path"]) == (
+        "moved", "week3-final.pdf", "week3-final.pdf", "Lectures/week3-final.pdf", "Lectures/Slides/week3-final.pdf")
+
+
+async def test_rename_and_move_in_one_change_logs_both_events_with_paths():
+    store = await synced()
+    await delta(feed(FakeGraph(), [item("a", "renamed.pdf", "L")]), store)
+    d = await store.get_document(DRIVE, "a")
+    evs = {e["event"]: e for e in await store.list_document_events(d["id"])}
+    assert evs["renamed"]["old_name"] == "syllabus.pdf" and evs["renamed"]["new_name"] == "renamed.pdf"
+    assert evs["moved"]["old_path"] == "syllabus.pdf" and evs["moved"]["new_path"] == "Lectures/renamed.pdf"
+
+
+async def test_deleted_folder_marks_children_deleted_with_paths_and_restore_brings_them_back():
+    store = await synced()
+    gone = {"id": "L", "deleted": {}, "parentReference": {"driveId": DRIVE, "id": FOLDER}}
+    fake = feed(FakeGraph(), [gone])
+    fake.add(f"/drives/{DRIVE}/items/L", {"error": {"code": "itemNotFound"}}, status=404)
+    await delta(fake, store)
+    for iid in ("L", "w3", "w4", "S", "s1"):
+        assert (await store.get_document(DRIVE, iid))["deleted_at"] is not None, iid
+    ev = next(e for e in await store.list_document_events((await store.get_document(DRIVE, "s1"))["id"]) if e["event"] == "deleted")
+    assert ev["old_path"] == "Lectures/Slides/deep.pdf" and ev["old_name"] == "deep.pdf"
+    assert {d["item_id"] for d in await store.list_documents()} == {"a"}
+
+    # the folder comes back from the recycle bin; Graph reports only the folder itself
+    await delta(feed(FakeGraph(), [item("L", "Lectures", FOLDER, True)], token="NEXT"), store)
+    live = {d["item_id"]: d["path"] for d in await store.list_documents()}
+    assert live == {"a": "syllabus.pdf", "L": "Lectures", "w3": "Lectures/week3.pdf", "w4": "Lectures/week4.pdf",
+                    "S": "Lectures/Slides", "s1": "Lectures/Slides/deep.pdf"}
+    assert events(store, "s1") == ["created", "deleted", "restored"]
+
+
+async def test_restored_folder_under_a_new_name_rewrites_restored_children_paths():
+    store = await synced()
+    fake = feed(FakeGraph(), [{"id": "L", "deleted": {}, "parentReference": {"driveId": DRIVE, "id": FOLDER}}])
+    fake.add(f"/drives/{DRIVE}/items/L", {"error": {"code": "itemNotFound"}}, status=404)
+    await delta(fake, store)
+    await delta(feed(FakeGraph(), [item("L", "Course", FOLDER, True)], token="NEXT"), store)
+    assert (await store.get_document(DRIVE, "s1"))["path"] == "Course/Slides/deep.pdf"
+
+
+async def test_child_deleted_earlier_stays_deleted_when_the_folder_is_restored():
+    store = await synced()
+    fake = feed(FakeGraph(), [{"id": "w4", "deleted": {}, "parentReference": {"driveId": DRIVE, "id": "L"}}])
+    fake.add(f"/drives/{DRIVE}/items/w4", {"error": {"code": "itemNotFound"}}, status=404)
+    await delta(fake, store)
+    fake = feed(FakeGraph(), [{"id": "L", "deleted": {}, "parentReference": {"driveId": DRIVE, "id": FOLDER}}], token="NEXT")
+    fake.add(f"/drives/{DRIVE}/items/L", {"error": {"code": "itemNotFound"}}, status=404)
+    await delta(fake, store)
+    await delta(feed(FakeGraph(), [item("L", "Lectures", FOLDER, True)], token="NEXT"), store)
+    assert (await store.get_document(DRIVE, "w4"))["deleted_at"] is not None
+    assert (await store.get_document(DRIVE, "w3"))["deleted_at"] is None

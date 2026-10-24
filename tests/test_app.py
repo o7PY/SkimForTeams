@@ -34,7 +34,7 @@ async def post(client, activity):
 async def test_health(env):
     client, _, _ = env
     r = await client.get("/health")
-    assert r.status == 200 and await r.json() == {"ok": True, "db": True}
+    assert r.status == 200 and await r.json() == {"ok": True, "db": True, "db_schema": "n/a"}
 
 
 async def test_post_fixtures_stores_everything(env, load):

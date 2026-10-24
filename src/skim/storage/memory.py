@@ -36,6 +36,9 @@ class MemoryStorage:
     async def ping(self) -> bool:
         return True
 
+    async def applied_migrations(self) -> set[str] | None:
+        return None
+
     async def insert_raw(self, row: dict) -> tuple[int, bool]:
         if row["dedupe_key"] in self._keys:
             return self._keys[row["dedupe_key"]], False

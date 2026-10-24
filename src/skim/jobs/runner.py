@@ -93,29 +93,48 @@ class JobRunner:
         self.storage, self.graph, self.budget_seconds, self._clock = storage, graph, budget_seconds, clock
 
     async def run(self, job: str, team_id: str | None = None) -> dict:
-        step = STEPS[job]
+        """Never raises: a failure becomes {status:"error", job_run_id, error_class} (and a failed job_runs row
+        when the database still allows one) instead of a bare 500."""
         started = self._clock()
+        try:
+            result = await self._run(job, team_id, started)
+        except Exception as e:  # infrastructure failure (lock table missing, DB down, ...): not a step failure
+            log.exception("job %s could not run", job)
+            result = {"status": "error", "job_run_id": None, "stats": {}, "next": False,
+                      "error": error_text(e), "error_class": type(e).__name__}
+            result["job_run_id"] = await self._record_failure(job, result)
+        self._log(job, result, started)
+        return result
+
+    async def _record_failure(self, job: str, result: dict) -> int | None:
+        try:
+            run_id = await self.storage.start_job_run(job)
+            await self.storage.finish_job_run(run_id, "error", {}, result["error"])
+            return run_id
+        except Exception:  # the database itself is the problem; the JSON response and the log still say so
+            return None
+
+    async def _run(self, job: str, team_id: str | None, started: float) -> dict:
+        step = STEPS[job]
         async with self.storage.job_lock(LOCK, self.budget_seconds + LEASE_MARGIN_SECONDS) as got:
             run_id = await self.storage.start_job_run(job)
             if not got:
                 await self.storage.finish_job_run(run_id, "busy", {})
-                result = {"status": "busy", "job_run_id": run_id, "stats": {}, "next": False}
-                self._log(job, result, started)
-                return result
+                return {"status": "busy", "job_run_id": run_id, "stats": {}, "next": False}
             ctx = JobContext(self.storage, self.graph, Budget(self.budget_seconds, self._clock))
             before = dict(self.graph.stats)
             error: str | None = None
+            error_class: str | None = None
             try:
                 status = await step(ctx, team_id)
             except Exception as e:  # never leak the exception text (could carry URLs); type/status/code only
                 log.exception("job %s failed", job)
-                status, error = "error", error_text(e)
+                status, error, error_class = "error", error_text(e), type(e).__name__
             stats = {**dict(ctx.stats), **{f"graph_{k}": v - before[k] for k, v in self.graph.stats.items()}}
             await self.storage.finish_job_run(run_id, status, stats, error)
         result = {"status": status, "job_run_id": run_id, "stats": stats, "next": status == "partial"}
         if error:
-            result["error"] = error
-        self._log(job, result, started)
+            result.update(error=error, error_class=error_class)
         return result
 
     def _log(self, job: str, result: dict, started: float) -> None:

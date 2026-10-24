@@ -17,7 +17,7 @@ def register(app: web.Application, runner: JobRunner, token: str) -> None:
             if not hmac.compare_digest(request.headers.get("Authorization", "").encode(), expected):
                 return web.json_response({"error": "unauthorized"}, status=401)
             result = await runner.run(job, request.query.get("team_id") or None)
-            return web.json_response(result)
+            return web.json_response(result, status=500 if result["status"] == "error" else 200)  # JSON either way
         return handler
 
     for job in STEPS:

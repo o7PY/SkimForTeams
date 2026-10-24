@@ -48,6 +48,12 @@ class PostgresStorage:
         except Exception:
             return False
 
+    async def applied_migrations(self) -> set[str] | None:
+        assert self.pool
+        if not await self.pool.fetchval("select to_regclass('public.schema_migrations') is not null"):
+            return set()
+        return {r["version"] for r in await self.pool.fetch("select version from schema_migrations")}
+
     async def insert_raw(self, row: dict) -> tuple[int, bool]:
         assert self.pool
         rid = await self.pool.fetchval(

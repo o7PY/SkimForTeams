@@ -10,6 +10,7 @@ from microsoft_agents.hosting.aiohttp import CloudAdapter, jwt_authorization_dec
 from . import debug_api, jobs_api
 from .bot import Sender, build_agent, current_capture, ingest, setup_activity_logger
 from .config import Settings
+from .schema import schema_status
 from .graph.auth import MsalTokenProvider
 from .graph.client import GraphClient
 from .jobs.runner import JobRunner
@@ -62,7 +63,9 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
             current_capture.reset(token)
 
     async def health(request: web.Request) -> web.Response:
-        return web.json_response({"ok": True, "db": await storage.ping()})
+        db = await storage.ping()
+        status = (await schema_status(storage))[0] if db else "unknown"
+        return web.json_response({"ok": True, "db": db, "db_schema": status})
 
     app = web.Application()
     app["agent_configuration"] = connections.get_default_connection_configuration()
@@ -84,6 +87,12 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
 
     async def on_startup(_: web.Application) -> None:
         await storage.start()
+        status, missing = await schema_status(storage)
+        if status == "behind":
+            log.error("DATABASE SCHEMA IS BEHIND THE CODE - missing migrations: %s. Run scripts/migrate.py. "
+                      "/health reports db_schema=behind; jobs will fail until then.", ", ".join(missing))
+        else:
+            log.info("database schema: %s", status)
 
     async def on_cleanup(_: web.Application) -> None:
         if own_graph and graph is not None:

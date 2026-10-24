@@ -213,3 +213,46 @@ async def test_run_all_end_to_end_on_postgres(pg_store):
     assert runs["run-all"]["status"] == "busy"
     assert (await store.get_sync_state(f"folder:{CHAN}"))["delta_link"]
     assert (await store.list_sync_teams())[0]["last_files_sync_at"] is not None
+
+
+async def test_missing_job_locks_table_returns_json_error_not_a_bare_500(env):
+    """The live incident: migration 004 not applied -> UndefinedTableError. Now a JSON error body."""
+    client, store, fake, graph = env
+
+    class UndefinedTableError(Exception): ...
+
+    def broken(*a, **k):
+        raise UndefinedTableError('relation "job_locks" does not exist')
+
+    store.job_lock = broken
+    r = await client.post("/jobs/run-all", headers=AUTH)
+    body = await r.json()
+    assert r.status == 500 and body["status"] == "error" and body["error_class"] == "UndefinedTableError"
+    assert "job_run_id" in body and "job_locks" not in str(body)
+    assert [j["status"] for j in await store.latest_job_runs()] == ["error"]  # a failed run row was still written
+
+
+async def test_step_failure_reports_error_class_and_writes_failed_run(env):
+    client, store, fake, graph = env
+
+    async def boom(*a, **k):
+        raise KeyError("x")
+
+    store.list_sync_teams = boom
+    r = await client.post("/jobs/discover", headers=AUTH)
+    body = await r.json()
+    assert r.status == 500 and body["status"] == "error" and body["error_class"] == "KeyError" and body["job_run_id"]
+    assert (await store.latest_job_runs())[0]["status"] == "error"
+
+
+async def test_error_with_database_down_still_returns_json(env):
+    client, store, fake, graph = env
+
+    def broken(*a, **k):
+        raise ConnectionError("db down")
+
+    store.job_lock = broken
+    store.start_job_run = broken
+    body = await (await client.post("/jobs/run-all", headers=AUTH)).json()
+    assert body == {"status": "error", "job_run_id": None, "stats": {}, "next": False, "error": "ConnectionError",
+                    "error_class": "ConnectionError"}

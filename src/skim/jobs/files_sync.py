@@ -19,18 +19,20 @@ log = logging.getLogger("skim.jobs")
 
 
 # ---------------------------------------------------------------------------- applying one item
-async def apply_item(ctx: JobContext, channel: dict, item: dict, path: str, raw_id: int, ts: datetime) -> int:
-    """Upsert one live driveItem and write the document_events it implies. Returns the document id."""
+async def apply_item(ctx: JobContext, channel: dict, item: dict, path: str, raw_id: int, ts: datetime,
+                     cascade_restore: bool = False) -> int:
+    """Upsert one live driveItem and write the document_events it implies. Returns the document id.
+    cascade_restore (delta only): a restored folder also brings back descendants soft-deleted with it."""
     st, store = ctx.stats, ctx.storage
     row = drive_item_row(item, channel["files_drive_id"])
     row.update(team_id=channel["team_id"], channel_id=channel["id"], path=path, graph_raw_id=raw_id,
                deleted_at=None, last_seen_at=ts)
     old = await store.get_document(row["drive_id"], row["item_id"])
     events: list[dict] = []
+    was_gone = old is not None and old["deleted_at"] is not None
     if old is None:
         events.append({"event": "created", "new_name": row["name"], "new_path": path})
     else:
-        was_gone = old["deleted_at"] is not None
         if was_gone or old["channel_id"] != channel["id"]:
             events.append({"event": "restored" if was_gone else "moved", "old_name": old["name"], "new_name": row["name"],
                            "old_path": old["path"], "new_path": path})
@@ -54,9 +56,36 @@ async def apply_item(ctx: JobContext, channel: dict, item: dict, path: str, raw_
     if not events:
         st["unchanged"] += 1
     st["items_seen"] += 1
-    if old is not None and row["is_folder"] and old["path"] != path:
-        await rewrite_descendants(ctx, row["drive_id"], row["item_id"], path, ts)
+    if old is not None and row["is_folder"]:
+        if was_gone and cascade_restore:
+            await restore_descendants(ctx, channel, row["drive_id"], row["item_id"], path, old["deleted_at"], ts, raw_id)
+        elif old["path"] != path:
+            await rewrite_descendants(ctx, row["drive_id"], row["item_id"], path, ts)
     return doc_id
+
+
+async def restore_descendants(ctx: JobContext, channel: dict, drive_id: str, folder_item_id: str, folder_path: str,
+                              deleted_at: datetime, ts: datetime, raw_id: int) -> None:
+    """Undo the cascade of _retire(kind="deleted"): descendants soft-deleted at the same instant as the folder come
+    back (with a `restored` event); live descendants only get their path rewritten. A child deleted on its own,
+    earlier, keeps its own deleted_at and stays deleted."""
+    queue = [(folder_item_id, folder_path)]
+    while queue:
+        fid, base = queue.pop(0)
+        for child in await ctx.storage.list_child_documents(drive_id, fid):
+            new_path = join_path(base, child["name"])
+            if child["deleted_at"] is not None:
+                if child["deleted_at"] != deleted_at or child["channel_id"] != channel["id"]:
+                    continue
+                await ctx.storage.upsert_document({**child, "deleted_at": None, "path": new_path, "last_seen_at": ts})
+                await ctx.storage.add_document_event({
+                    "document_id": child["id"], "event": "restored", "at": ts, "graph_raw_id": raw_id,
+                    "old_name": child["name"], "new_name": child["name"], "old_path": child["path"], "new_path": new_path})
+                ctx.stats["restored"] += 1
+            elif child["path"] != new_path:
+                await ctx.storage.upsert_document({**child, "path": new_path, "last_seen_at": ts})
+            if child["is_folder"]:
+                queue.append((child["item_id"], new_path))
 
 
 async def rewrite_descendants(ctx: JobContext, drive_id: str, folder_item_id: str, folder_path: str, ts: datetime) -> None:
@@ -212,7 +241,7 @@ async def _apply_delta_page(ctx: JobContext, channel: dict, endpoint: str, items
             else:
                 ctx.stats["out_of_scope"] += 1
             continue
-        await apply_item(ctx, channel, it, path, raw_id, ts)
+        await apply_item(ctx, channel, it, path, raw_id, ts, cascade_restore=True)
 
 
 async def delta_sync_channel(ctx: JobContext, channel: dict) -> str:
