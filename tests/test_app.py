@@ -183,3 +183,26 @@ def test_config_fails_fast_without_leaking_values():
         Settings.from_env({"STORAGE": "postgres", "CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET": "LEAKME"})
     msg = str(e.value)
     assert "CLIENTID" in msg and "DATABASE_URL" in msg and "PAIRING_SECRET" in msg and "LEAKME" not in msg
+
+
+@pytest.mark.parametrize("name", ["channel_post_private", "channel_post_shared"])
+async def test_non_standard_channel_is_dropped_before_raw_storage(env, load, name, caplog):
+    client, store, sent = env
+    caplog.set_level("DEBUG")
+    r = await post(client, load(name))
+    assert r.status == 202
+    assert store.raw == [] and store.messages == {} and store.conversations == {} and store.teams == {} and sent == []
+    assert "skipped non-standard channel" in caplog.text
+    assert "Midterm" not in caplog.text and "chanprivate" not in caplog.text.lower()  # fixed line only
+
+
+async def test_standard_channel_with_explicit_type_is_still_captured(env, load):
+    client, store, _ = env
+    await post(client, load("channel_post_standard_typed"))
+    assert len(store.raw) == 1 and len(store.messages) == 1
+
+
+def test_is_non_standard_channel_reads_both_fields():
+    from skim.normalize import is_non_standard_channel as f
+    assert f({"channelData": {"channel": {"membershipType": "Private"}}})
+    assert not f({"channelData": {"channel": {"id": "x"}}}) and not f({}) and not f({"channelData": None})

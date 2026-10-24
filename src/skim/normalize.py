@@ -53,6 +53,22 @@ def event_type(activity: dict) -> str | None:
     return _d(activity.get("channelData")).get("eventType")
 
 
+NON_STANDARD_CHANNEL_TYPES = {"private", "shared"}
+
+
+def is_non_standard_channel(activity: dict) -> bool:
+    """True if the activity says it comes from a private or shared channel (P2-D-116: such channels are out of scope).
+
+    Reads channelData.channel.type / .membershipType. Teams is not known to always send them (P2-DIFF-004),
+    so an activity without the field is treated as standard."""
+    channel = _d(_d(activity.get("channelData")).get("channel"))
+    for key in ("type", "membershipType"):
+        v = channel.get(key)
+        if isinstance(v, str) and v.strip().lower() in NON_STANDARD_CHANNEL_TYPES:
+            return True
+    return False
+
+
 def raw_fields(activity: dict) -> dict:
     cd = _d(activity.get("channelData"))
     return {

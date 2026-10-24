@@ -10,6 +10,7 @@ from microsoft_agents.hosting.aiohttp import CloudAdapter, jwt_authorization_dec
 from . import debug_api
 from .bot import Sender, build_agent, current_capture, ingest, setup_activity_logger
 from .config import Settings
+from .normalize import is_non_standard_channel
 from .storage.base import Storage
 
 log = logging.getLogger("skim")
@@ -39,6 +40,10 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
             return web.json_response({"error": "invalid JSON"}, status=400)
         if not isinstance(activity, dict):
             return web.json_response({"error": "expected a JSON object"}, status=400)
+        if is_non_standard_channel(activity):
+            # P2-D-116: privacy wins over raw-first. Nothing is stored, nothing is logged but this fixed line.
+            log.info("skipped non-standard channel")
+            return web.Response(status=202)
         # A storage failure propagates as 500 on purpose: Teams will retry, so nothing is lost.
         capture = await ingest(storage, settings, activity)
         token = current_capture.set(capture)
