@@ -369,6 +369,17 @@ class MemoryStorage:
         docs.sort(key=lambda d: (d["deleted_at"] is not None, -d["id"]))
         return dict(docs[0]) if docs else None
 
+    async def list_document_history(self, team_id) -> list[dict]:
+        docs = {d["id"]: d for d in self.documents.values()}
+        out = []
+        for e in sorted(self.document_events, key=lambda e: (e["at"], e["id"])):
+            d = docs.get(e["document_id"])
+            if d and d["team_id"] == team_id and (e["old_name"] or e["old_path"]):
+                out.append({"document_id": d["id"], "web_url_norm": d["web_url_norm"], "path": d["path"],
+                            "name": d["name"], "deleted_at": d["deleted_at"], "old_name": e["old_name"],
+                            "old_path": e["old_path"], "at": e["at"]})
+        return out
+
     async def find_document_by_url(self, team_id, web_url_norm) -> dict | None:
         return self._best([d for d in self.documents.values()
                            if d["team_id"] == team_id and d["web_url_norm"] == web_url_norm])

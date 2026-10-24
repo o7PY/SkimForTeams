@@ -484,6 +484,14 @@ class PostgresStorage:
                  and not exists (select 1 from attachment_document_links l where l.attachment_id = a.id)
                order by a.id limit $2""", team_id, limit)]
 
+    async def list_document_history(self, team_id) -> list[dict]:
+        assert self.pool
+        return [dict(r) for r in await self.pool.fetch(
+            """select d.id as document_id, d.web_url_norm, d.path, d.name, d.deleted_at, e.old_name, e.old_path, e.at
+               from document_events e join documents d on d.id = e.document_id
+               where d.team_id = $1 and (e.old_name is not null or e.old_path is not null)
+               order by e.at, e.id""", team_id)]
+
     async def find_document_by_url(self, team_id, web_url_norm) -> dict | None:
         assert self.pool
         r = await self.pool.fetchrow(

@@ -99,6 +99,10 @@ class Storage(Protocol):
         """File-reference attachments (content_url set) posted in a tracked channel and not yet linked; each row
         has id, conversation_id (= channel id), team_id, name, content_url."""
 
+    async def list_document_history(self, team_id: str) -> list[dict]:
+        """One row per rename/move event of the team's documents (old_name or old_path set), oldest first, with the
+        document's current web_url_norm, path, name and deleted_at: where a file used to be (P2-D-141)."""
+
     async def find_document_by_url(self, team_id: str, web_url_norm: str) -> dict | None:
         """Live document of the team with this normalised URL (else a deleted one)."""
 

@@ -60,7 +60,7 @@ async def test_matches_by_normalised_web_url_ignoring_case_encoding_query_and_sl
     d = await add_doc(store, "a", "syllabus.pdf", f"{SITE}/syllabus.pdf")
     await post(store, "m1", "HTTPS://Example.SharePoint.com/sites/Team/Shared%20Documents/GENERAL/Syllabus.pdf?web=1#x")
     stats = await link(store)
-    assert await links_of(store, d) == [("m1", "web_url")] and stats["links_web_url"] == 1
+    assert await links_of(store, d) == [("m1", "url")] and stats["links_url"] == 1
 
 
 async def test_falls_back_to_name_and_path_when_the_url_differs(store):
@@ -77,18 +77,18 @@ async def test_web_url_wins_over_name_path(store):
     wrong = await add_doc(store, "w", "week3.pdf", "https://elsewhere.example/x")
     await post(store, "m3", f"{SITE}/Lectures/week3.pdf")
     await link(store)
-    assert await links_of(store, right) == [("m3", "web_url")] and await links_of(store, wrong) == []
+    assert await links_of(store, right) == [("m3", "url")] and await links_of(store, wrong) == []
 
 
 async def test_unmatched_is_left_alone_then_linked_once_the_file_appears_and_never_duplicated(store):
     await seed(store)
     await post(store, "m4", f"{SITE}/later.pdf")
     stats = await link(store)
-    assert stats["attachments_unmatched"] == 1 and stats["links_web_url"] == 0
+    assert stats["attachments_unmatched"] == 1 and stats["links_url"] == 0
     d = await add_doc(store, "l", "later.pdf", f"{SITE}/later.pdf")
     await link(store)
     stats = await link(store)  # third run: nothing left to do
-    assert await links_of(store, d) == [("m4", "web_url")] and stats["attachments_considered"] == 0
+    assert await links_of(store, d) == [("m4", "url")] and stats["attachments_considered"] == 0
 
 
 async def test_live_document_preferred_over_a_deleted_one_and_deleted_still_links(store):
@@ -99,8 +99,8 @@ async def test_live_document_preferred_over_a_deleted_one_and_deleted_still_link
     await post(store, "m6", f"{SITE}/gone.pdf")
     gone = await add_doc(store, "gone", "gone.pdf", f"{SITE}/gone.pdf", deleted=True)
     await link(store)
-    assert await links_of(store, new) == [("m5", "web_url")] and await links_of(store, old) == []
-    assert await links_of(store, gone) == [("m6", "web_url")]
+    assert await links_of(store, new) == [("m5", "url")] and await links_of(store, old) == []
+    assert await links_of(store, gone) == [("m6", "url")]
 
 
 async def test_ignores_non_file_attachments_dm_conversations_and_other_teams(store):
@@ -136,3 +136,114 @@ async def test_name_path_fallback_rejects_a_lookalike_url_on_another_host(store)
     stats = await link(store)
     assert await links_of(store, d) == [("good", "name_path")] and stats["links_rejected_host"] == 1
     assert stats["attachments_unmatched"] == 1
+
+
+# ------------------------------------------------------------------ P2-D-141: URL formats, history, item id
+import pytest
+from fake_graph import FakeGraph
+from skim.jobs.link_attachments import history_index, historical_urls, shares_id
+
+
+def test_normalize_url_handles_raw_spaces_sharing_prefix_port_and_slashes():
+    a = normalize_url("https://Example.sharepoint.com/sites/Team/Shared Documents/General/appPackage.zip")
+    assert a == normalize_url("https://example.sharepoint.com/sites/Team/Shared%20Documents/General/appPackage.zip")
+    assert a == normalize_url("https://example.sharepoint.com:443/:u:/r/sites/Team/Shared%20Documents//General/AppPackage.zip?csf=1&web=1#x")
+    assert normalize_url("https://example.sharepoint.com/:u:/s/Team/EaBc") != a  # opaque token links are not rewritten
+    assert normalize_url("not a url") is None and normalize_url(None) is None
+
+
+def test_historical_urls_from_rename_and_move_events():
+    cur = normalize_url(f"{SITE}/Lectures/APPY.zip")
+    assert historical_urls(cur, "Lectures/APPY.zip", "APPY.zip", "Lectures/appPackage.zip", "appPackage.zip") == [
+        normalize_url(f"{SITE}/Lectures/appPackage.zip")] * 2
+    assert historical_urls(cur, "Lectures/APPY.zip", "APPY.zip", "old/APPY.zip", None) == [normalize_url(f"{SITE}/old/APPY.zip")]
+    assert historical_urls(None, "a", "a", "b", "b") == []
+
+
+async def renamed_doc(s):
+    """The live case: appPackage.zip was posted, then renamed to APPY.zip in the Files tab."""
+    d = await add_doc(s, "zip", "APPY.zip", f"{SITE}/APPY.zip")
+    await s.add_document_event({"document_id": d, "event": "renamed", "at": datetime(2026, 10, 3, tzinfo=timezone.utc),
+                                "old_name": "appPackage.zip", "new_name": "APPY.zip",
+                                "old_path": "appPackage.zip", "new_path": "APPY.zip"})
+    return d
+
+
+async def test_attachment_of_a_renamed_file_links_through_history(store):
+    await seed(store)
+    d = await renamed_doc(store)
+    raw = "https://example.sharepoint.com/sites/Team/Shared Documents/General/appPackage.zip"  # raw spaces
+    await post(store, "m7", raw, name="appPackage.zip")
+    stats = await link(store)
+    assert await links_of(store, d) == [("m7", "history")] and stats["links_history"] == 1
+    assert normalize_url(raw) in await history_index(store, TEAM)
+
+
+async def test_moved_file_links_through_history_and_a_live_document_beats_a_deleted_one(store):
+    await seed(store)
+    d = await add_doc(store, "mv", "Week1/notes.pdf", f"{SITE}/Week1/notes.pdf")
+    await store.add_document_event({"document_id": d, "event": "moved", "at": datetime(2026, 10, 3, tzinfo=timezone.utc),
+                                    "old_name": "notes.pdf", "new_name": "notes.pdf",
+                                    "old_path": "notes.pdf", "new_path": "Week1/notes.pdf"})
+    gone = await add_doc(store, "dead", "Week9/notes.pdf", f"{SITE}/Week9/notes.pdf", deleted=True)
+    await store.add_document_event({"document_id": gone, "event": "moved", "at": datetime(2026, 10, 4, tzinfo=timezone.utc),
+                                    "old_name": "notes.pdf", "new_name": "notes.pdf",
+                                    "old_path": "notes.pdf", "new_path": "Week9/notes.pdf"})
+    await post(store, "m8", f"{SITE}/notes.pdf", name="notes.pdf")
+    await link(store)
+    assert await links_of(store, d) == [("m8", "history")] and await links_of(store, gone) == []
+
+
+async def link_with_graph(s, fake, team=None):
+    async with fake.serve() as base:
+        g = GraphClient(StaticTokenProvider(), base_url=base)
+        ctx = JobContext(s, g, Budget(60))
+        await link_attachments(ctx, team)
+        await g.close()
+    return ctx.stats
+
+
+async def test_item_id_is_the_last_resort_and_only_for_documents_of_the_same_team(store):
+    await seed(store)
+    d = await add_doc(store, "item-1", "Quiz/q1.pdf", "https://example.sharepoint.com/:b:/s/Team/Opaque")
+    url = "https://example.sharepoint.com/:b:/s/Team/EaSharingToken"  # a sharing link: path says nothing
+    fake = FakeGraph()
+    fake.add(f"/shares/{shares_id(url)}/driveItem", {"id": "item-1", "parentReference": {"driveId": DRIVE}})
+    await post(store, "m9", url, name="q1.pdf")
+    stats = await link_with_graph(store, fake)
+    assert await links_of(store, d) == [("m9", "item_id")] and stats["links_item_id"] == 1
+
+
+async def test_item_id_ignores_a_document_of_another_team_and_foreign_hosts(store):
+    await seed(store)
+    await store.upsert_team({"id": "19:t2@thread.tacv2", "aad_group_id": "g2"})
+    await store.upsert_document({"drive_id": DRIVE, "item_id": "other", "team_id": "19:t2@thread.tacv2", "channel_id": None,
+                                 "name": "x.pdf", "parent_item_id": "F", "path": "x.pdf",
+                                 "web_url": "https://example.sharepoint.com/a", "web_url_norm": "https://example.sharepoint.com/a"})
+    url = "https://example.sharepoint.com/:b:/s/Team/Tok"
+    fake = FakeGraph()
+    fake.add(f"/shares/{shares_id(url)}/driveItem", {"id": "other", "parentReference": {"driveId": DRIVE}})
+    await post(store, "m10", url)
+    await post(store, "m11", "https://evil.example.com/x.pdf")
+    stats = await link_with_graph(store, fake)
+    assert stats["links_item_id"] == 0 and stats["attachments_unmatched"] == 2 and stats["shares_calls"] == 1
+
+
+async def test_item_id_403_is_logged_once_and_skipped_for_the_rest_of_the_run(store, caplog):
+    await seed(store)
+    fake = FakeGraph()
+    for i in range(3):
+        u = f"https://example.sharepoint.com/:b:/s/Team/T{i}"
+        fake.add(f"/shares/{shares_id(u)}/driveItem", {"error": {"code": "accessDenied"}}, status=403)
+        await post(store, f"mm{i}", u)
+    with caplog.at_level("WARNING", logger="skim.jobs"):
+        stats = await link_with_graph(store, fake)
+    assert stats["shares_calls"] == 1 and stats["shares_forbidden"] == 1 and stats["attachments_unmatched"] == 3
+    assert sum("Files.Read.All" in r.message for r in caplog.records) == 1
+
+
+def test_shares_id_is_urlsafe_base64_with_u_prefix_and_encoded_spaces():
+    i = shares_id("https://h.sharepoint.com/sites/T/Shared Documents/a.zip")
+    assert i.startswith("u!") and "=" not in i and "/" not in i and "+" not in i
+    import base64
+    assert base64.urlsafe_b64decode(i[2:] + "==").decode() == "https://h.sharepoint.com/sites/T/Shared%20Documents/a.zip"

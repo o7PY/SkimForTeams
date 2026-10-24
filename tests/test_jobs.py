@@ -296,7 +296,7 @@ async def test_backfill_endpoint_is_explicit_and_validates_since_days(env):
 async def test_run_all_links_the_posted_file_to_its_document(env):
     client, store, fake, graph = env
     body = await (await client.post("/jobs/run-all", headers=AUTH)).json()
-    assert body["stats"]["links_web_url"] == 1
+    assert body["stats"]["links_url"] == 1
     doc = await store.get_document(DRIVE, "a")
     assert [l["message_id"] for l in await store.list_document_links(doc["id"])] == ["m1"]
     body = await (await client.post("/jobs/link-attachments", headers=AUTH)).json()

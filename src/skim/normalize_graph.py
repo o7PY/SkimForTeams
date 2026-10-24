@@ -27,15 +27,24 @@ def payload_hash(kind: str, payload: Any) -> str:
     return hashlib.sha256(f"{kind}\n{canon}".encode()).hexdigest()
 
 
+_SHARING_PREFIX = re.compile(r"^/:[a-z]:/r(?=/)", re.I)  # /:x:/r/sites/T/... = a sharing link that carries the path
+_SLASHES = re.compile(r"/{2,}")
+
+
 def normalize_url(url: str | None) -> str | None:
-    """Comparable form of a SharePoint URL (P2-D-122): percent-decoded, scheme+host+path lower-cased
-    (SharePoint paths are case-insensitive), no query, no fragment, no trailing slash."""
+    """Comparable form of a SharePoint URL (P2-D-122, P2-D-141): scheme+host lower-cased, default port dropped,
+    path percent-decoded (so raw spaces == %20), lower-cased (SharePoint paths are case-insensitive), the
+    `/:x:/r` sharing prefix removed, slashes collapsed, no query, no fragment, no trailing slash."""
     if not url:
         return None
     parts = urlsplit(url.strip())
     if not parts.netloc:
         return None
-    return f"{parts.scheme.lower()}://{parts.netloc.lower()}{unquote(parts.path).lower().rstrip('/')}"
+    host = parts.netloc.lower()
+    if host.endswith(":443") and parts.scheme.lower() == "https":
+        host = host[:-4]
+    path = _SLASHES.sub("/", _SHARING_PREFIX.sub("", unquote(parts.path))).lower().rstrip("/")
+    return f"{parts.scheme.lower()}://{host}{path}"
 
 
 def _user(identity: Any) -> tuple[str | None, str | None]:
