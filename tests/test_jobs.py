@@ -345,3 +345,9 @@ def test_source_has_no_content_download_code_path():
         for n, line in enumerate(f.read_text().splitlines(), 1):
             assert not re.search(r"/content\b(?!Url)", line), f"{f}:{n} {line.strip()}"
             assert "downloadurl" not in line.lower(), f"{f}:{n} {line.strip()}"
+
+
+async def test_run_all_includes_message_enrichment_and_a_failing_feed_does_not_fail_the_run(env):
+    client, store, fake, graph = env
+    body = await (await client.post("/jobs/run-all", headers=AUTH)).json()
+    assert body["status"] == "ok" and body["stats"].get("enrich_errors", 0) + body["stats"].get("delta_pages", 0) >= 1

@@ -1,0 +1,35 @@
+{
+  "id": "1700000000060",
+  "replyToId": null,
+  "messageType": "message",
+  "createdDateTime": "2026-10-22T10:00:00Z",
+  "lastModifiedDateTime": "2026-10-22T10:05:00Z",
+  "lastEditedDateTime": "2026-10-22T10:05:00Z",
+  "deletedDateTime": null,
+  "subject": "Assignment 3 deadline moved",
+  "importance": "high",
+  "from": {
+    "user": {
+      "id": "00000000-0000-0000-0000-0000000000a1",
+      "displayName": "Prof Rao",
+      "userIdentityType": "aadUser"
+    }
+  },
+  "body": {
+    "contentType": "html",
+    "content": "<p>The deadline is now Friday. See the attached brief.</p><attachment id=\"att-0060\"></attachment>"
+  },
+  "mentions": [],
+  "reactions": [],
+  "attachments": [
+    {
+      "id": "att-0060",
+      "contentType": "reference",
+      "contentUrl": "https://example.sharepoint.com/sites/Team/Shared Documents/General/Assignment3_Brief.pdf",
+      "name": "Assignment3_Brief.pdf",
+      "content": null,
+      "teamsAppId": null,
+      "thumbnailUrl": null
+    }
+  ]
+}
