@@ -311,3 +311,37 @@ async def test_backfill_force_restarts_without_duplicating_rows(env):
     body = await r.json()
     assert r.status == 200 and body["status"] == "ok" and body["stats"].get("messages_created", 0) == 0
     assert {k: dict(v) for k, v in store.messages.items()} == before
+
+
+async def test_no_file_content_is_ever_requested_or_stored(env):
+    """Spec §8 / P2-D-106: metadata only. No request to a /content path or a pre-authenticated download URL, and
+    no download URL in anything stored."""
+    import json as _json
+    client, store, fake, graph = env
+    for route in fake.routes.values():  # make every drive item carry a download URL, as real Graph does
+        for _, body, _ in route:
+            for it in (body.get("value", []) if isinstance(body, dict) else []):
+                if isinstance(it, dict) and "name" in it:
+                    it["@microsoft.graph.downloadUrl"] = "http://download.invalid/secret-token"
+    await client.post("/jobs/run-all", headers=AUTH)
+    await client.post("/jobs/run-all", headers=AUTH)
+    assert fake.requests
+    for path, query, _ in fake.requests:
+        assert not path.rstrip("/").endswith("/content") and "downloadurl" not in path.lower(), path
+        assert "download.invalid" not in path and "$format" not in query, (path, query)
+    assert "secret-token" not in _json.dumps(store.graph_raw, default=str)
+    assert "downloadUrl" not in _json.dumps(store.graph_raw, default=str)
+
+
+def test_source_has_no_content_download_code_path():
+    """Static guard: only the Graph client (which refuses such requests) and the stripper in normalize_graph name
+    a /content path or a download URL; no job builds one."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).parent.parent / "src" / "skim"
+    for f in root.rglob("*.py"):
+        if f.name in ("client.py", "normalize_graph.py"):
+            continue
+        for n, line in enumerate(f.read_text().splitlines(), 1):
+            assert not re.search(r"/content\b(?!Url)", line), f"{f}:{n} {line.strip()}"
+            assert "downloadurl" not in line.lower(), f"{f}:{n} {line.strip()}"
