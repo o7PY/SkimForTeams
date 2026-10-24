@@ -304,14 +304,16 @@ class PostgresStorage:
         return dict(r) if r else None
 
     async def upsert_document(self, doc: dict) -> int:
+        """`last_seen_at` may be supplied (the sync's own clock); default is the DB's now()."""
         assert self.pool
         cols = self._DOC_COLS
-        values = [doc.get(c) for c in cols]
+        values = [doc.get(c) for c in cols] + [doc.get("last_seen_at")]
         values[cols.index("is_folder")] = bool(doc.get("is_folder"))
         updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c not in ("drive_id", "item_id"))
+        marks = ", ".join(f"${i + 1}" for i in range(len(cols))) + f", coalesce(${len(cols) + 1}, now())"
         return await self.pool.fetchval(
-            f"""insert into documents ({", ".join(cols)}) values ({", ".join(f"${i + 1}" for i in range(len(cols)))})
-                on conflict (drive_id, item_id) do update set {updates}, last_seen_at = now()
+            f"""insert into documents ({", ".join(cols)}, last_seen_at) values ({marks})
+                on conflict (drive_id, item_id) do update set {updates}, last_seen_at = excluded.last_seen_at
                 returning id""", *values)
 
     async def list_documents(self, team_id=None, channel_id=None, include_deleted=False, limit=100) -> list[dict]:

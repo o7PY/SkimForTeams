@@ -225,13 +225,13 @@ class MemoryStorage:
         return dict(d) if d else None
 
     async def upsert_document(self, doc: dict) -> int:
-        now = self._now()
+        now = doc.get("last_seen_at") or self._now()
         i = self._doc_key(doc["drive_id"], doc["item_id"])
         row = {c: doc.get(c) for c in self._DOC_COLS}
         row["is_folder"] = bool(doc.get("is_folder"))
         if i is None:
             i = max(self.documents, default=0) + 1
-            self.documents[i] = {"id": i, "first_seen_at": now, **row, "last_seen_at": now}
+            self.documents[i] = {"id": i, "first_seen_at": self._now(), **row, "last_seen_at": now}
         else:
             self.documents[i].update(row, last_seen_at=now)
         return i
