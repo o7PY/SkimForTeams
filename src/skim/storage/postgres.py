@@ -11,7 +11,7 @@ from typing import Any
 import asyncpg
 
 from ..normalize import MessageEvent
-from ..normalize_graph import fill_empty
+from ..normalize_graph import fill_empty, missing_attachments
 
 log = logging.getLogger("skim.storage")
 
@@ -442,12 +442,14 @@ class PostgresStorage:
                     await conn.execute(f"update messages set {sets} where conversation_id=$1 and message_id=$2",
                                        cid, mid, *fills.values())
                     result = "filled"
-            have_att = await conn.fetchval(
-                "select exists(select 1 from attachments where conversation_id=$1 and message_id=$2)", cid, mid)
+            have_att = [dict(r) for r in await conn.fetch(
+                "select content_type, name, content_url from attachments where conversation_id=$1 and message_id=$2",
+                cid, mid)]
             have_rx = await conn.fetchval(
                 "select exists(select 1 from reactions where conversation_id=$1 and message_id=$2)", cid, mid)
-            if attachments and not have_att:
-                for r in attachments:
+            new_att = missing_attachments(have_att, attachments)
+            if new_att:
+                for r in new_att:
                     await conn.execute(
                         """insert into attachments (conversation_id, message_id, content_type, name, content_url, payload)
                            values ($1,$2,$3,$4,$5,$6)""", cid, mid, r["content_type"], r["name"], r["content_url"], r["payload"])
@@ -462,6 +464,16 @@ class PostgresStorage:
             if result == "filled":
                 await conn.execute("update messages set backfilled_at=now() where conversation_id=$1 and message_id=$2", cid, mid)
             return result
+
+    async def list_empty_messages(self, team_id, limit) -> list[dict]:
+        assert self.pool
+        rows = await self.pool.fetch(
+            """select m.conversation_id, m.message_id, m.reply_to_id, c.team_id from messages m
+               join channels c on c.id = m.conversation_id
+               where m.source = 'live' and m.deleted_at is null and coalesce(m.text, '') = '' and coalesce(m.html, '') = ''
+                 and ($1::text is null or c.team_id = $1)
+               order by m.created_at desc nulls last limit $2""", team_id, limit)
+        return [dict(r) for r in rows]
 
     async def list_unlinked_attachments(self, team_id, limit) -> list[dict]:
         assert self.pool

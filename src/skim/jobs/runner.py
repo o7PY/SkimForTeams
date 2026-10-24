@@ -14,6 +14,7 @@ from ..graph.auth import GraphAuthError
 from ..graph.client import GraphClient, GraphError
 from ..storage.base import Storage
 from .common import Budget, JobContext
+from .refill import refill_empty
 from .backfill import backfill_team, state_key
 from .discover import discover_team
 from .files_sync import delta_sync_channel, full_sync_channel
@@ -105,6 +106,15 @@ async def step_backfill_initial(ctx: JobContext, team_id: str | None) -> str:
     return await step_backfill(ctx, team_id, force=False)
 
 
+async def step_refill_empty(ctx: JobContext, team_id: str | None) -> str:
+    partial = False
+    for team in select_teams(await ctx.storage.list_sync_teams(), team_id):
+        if ctx.budget.expired():
+            return "partial"
+        partial = partial or await refill_empty(ctx, team) == "partial"
+    return "partial" if partial else "ok"
+
+
 async def step_link_attachments(ctx: JobContext, team_id: str | None) -> str:
     teams = select_teams(await ctx.storage.list_sync_teams(), team_id) if team_id else [None]
     for team in teams:
@@ -112,8 +122,9 @@ async def step_link_attachments(ctx: JobContext, team_id: str | None) -> str:
     return "ok"
 
 
-EXTRA_RUN_ALL_STEPS: list[Step] = [step_backfill_initial, step_link_attachments]
+EXTRA_RUN_ALL_STEPS: list[Step] = [step_backfill_initial, step_refill_empty, step_link_attachments]
 STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_files, "backfill": step_backfill,
+                          "refill-empty": step_refill_empty,
                           "link-attachments": step_link_attachments, "run-all": step_run_all}
 
 

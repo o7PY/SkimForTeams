@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from ..normalize import MessageEvent
-from ..normalize_graph import fill_empty
+from ..normalize_graph import fill_empty, missing_attachments
 
 
 class MemoryStorage:
@@ -330,8 +330,9 @@ class MemoryStorage:
         fills = fill_empty(cur, message)
         cur.update(fills)
         changed = bool(fills)
-        if attachments and not any((a["conversation_id"], a["message_id"]) == key for a in self.attachments):
-            await self.add_attachments(attachments, None)
+        have = [a for a in self.attachments if (a["conversation_id"], a["message_id"]) == key]
+        if new_att := missing_attachments(have, attachments):
+            await self.add_attachments(new_att, None)
             changed = True
         if reactions and not any((r["conversation_id"], r["message_id"]) == key for r in self.reactions):
             await self.add_reactions(reactions, None)
@@ -339,6 +340,18 @@ class MemoryStorage:
         if changed:
             cur["backfilled_at"] = now
         return "filled" if changed else "unchanged"
+
+    async def list_empty_messages(self, team_id, limit) -> list[dict]:
+        out = []
+        for (cid, mid), m in self.messages.items():
+            ch = self.channels.get(cid)
+            if (ch is None or m.get("source", "live") != "live" or m.get("deleted_at") or m.get("text") or m.get("html")
+                    or (team_id and ch["team_id"] != team_id)):
+                continue
+            out.append({"conversation_id": cid, "message_id": mid, "reply_to_id": m.get("reply_to_id"),
+                        "team_id": ch["team_id"], "_at": m.get("created_at") or datetime.min.replace(tzinfo=timezone.utc)})
+        out.sort(key=lambda r: r["_at"], reverse=True)
+        return [{k: v for k, v in r.items() if k != "_at"} for r in out[:limit]]
 
     async def list_unlinked_attachments(self, team_id, limit) -> list[dict]:
         linked = {a for a, _, _ in self.links}

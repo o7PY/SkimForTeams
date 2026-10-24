@@ -307,12 +307,13 @@ async def test_storage_backfill_message_contract(store):
     assert (await store.get_message(CH, "m1"))["message"]["deleted_at"] is not None
 
 
-async def test_storage_backfill_adds_attachments_only_when_none_exist(store):
+async def test_storage_backfill_adds_only_the_attachments_the_message_lacks(store):
     await seed_conv(store)
     assert await store.backfill_message(mrow("m2"), [], []) == "created"
     assert await store.backfill_message(mrow("m2"), [att("m2")], []) == "filled"
-    assert await store.backfill_message(mrow("m2"), [att("m2", "https://x/other.pdf")], []) == "unchanged"
-    assert len((await store.get_message(CH, "m2"))["attachments"]) == 1
+    assert await store.backfill_message(mrow("m2"), [att("m2")], []) == "unchanged"  # already there: no duplicate
+    assert await store.backfill_message(mrow("m2"), [att("m2", "https://x/other.pdf")], []) == "filled"  # lacked it
+    assert len((await store.get_message(CH, "m2"))["attachments"]) == 2
 
 
 async def test_stats_show_what_graph_returned_by_type_and_paging_covers_more_than_one_page():

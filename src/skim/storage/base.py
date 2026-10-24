@@ -88,8 +88,12 @@ class Storage(Protocol):
 
     async def backfill_message(self, message: dict, attachments: list[dict], reactions: list[dict]) -> str:
         """Insert a Graph-sourced message (source='graph') or, if the row exists, only fill its empty columns
-        (P2-D-114). Attachments/reactions are added only when the message has none. Returns
-        'created' | 'filled' | 'unchanged'."""
+        (P2-D-114). Attachments the message lacks (missing_attachments) are added; reactions only when it has none.
+        Returns 'created' | 'filled' | 'unchanged'."""
+
+    async def list_empty_messages(self, team_id: str | None, limit: int) -> list[dict]:
+        """Live-captured, non-deleted messages of tracked channels with neither text nor html (a post with a file
+        upload can arrive empty), newest first: conversation_id, message_id, reply_to_id, team_id."""
 
     async def list_unlinked_attachments(self, team_id: str | None, limit: int) -> list[dict]:
         """File-reference attachments (content_url set) posted in a tracked channel and not yet linked; each row

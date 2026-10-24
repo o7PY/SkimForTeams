@@ -126,3 +126,22 @@ def fill_empty(before: dict, new: dict) -> dict:
     """P2-D-114: the columns where the stored (live) row is empty and the Graph message has a value. Nothing
     already present is ever overwritten."""
     return {k: new[k] for k in FILLABLE if before.get(k) is None and new.get(k) is not None}
+
+
+def _attachment_key(a: dict) -> tuple:
+    url = normalize_url(a.get("content_url"))
+    return (a.get("content_type") or "", url or (a.get("name") or "").lower())
+
+
+def missing_attachments(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    """P2-D-114/140: Graph attachments the stored message does not have yet (same type and URL, or type and name
+    when there is no URL). Existing rows are never changed or removed; a live post that arrived with only an empty
+    text/html attachment still gets its file reference."""
+    have = {_attachment_key(a) for a in existing}
+    out = []
+    for a in incoming:
+        k = _attachment_key(a)
+        if k not in have:
+            have.add(k)
+            out.append(a)
+    return out
