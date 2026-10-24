@@ -133,3 +133,131 @@ async def full_sync_channel(ctx: JobContext, channel: dict, force_root: bool = F
     await ctx.storage.update_channel(cid, last_synced_at=now, sync_error=None)
     ctx.stats["full_syncs"] += 1
     return "ok"
+
+
+# ---------------------------------------------------------------------------- delta sync
+async def _path_of(ctx: JobContext, channel: dict, item_id: str, by_id: dict, memo: dict, depth: int = 0) -> str | None:
+    """Relative path of an item by walking parent ids up to the tracked folder; None if it lies outside it.
+    Order of sources: this delta page (newest), the DB, one metadata GET (cached in `memo`)."""
+    if item_id == channel["files_folder_item_id"]:
+        return ""
+    if item_id in memo:
+        return memo[item_id]
+    if depth > 25:
+        return None
+    drive = channel["files_drive_id"]
+    if item_id in by_id:
+        meta = by_id[item_id]
+    else:
+        doc = await ctx.storage.get_document(drive, item_id)
+        if doc and doc["deleted_at"] is None and doc["channel_id"] == channel["id"]:
+            memo[item_id] = doc["path"]
+            return doc["path"]
+        try:
+            meta = await ctx.graph.get(f"/drives/{drive}/items/{item_id}", {"$select": "id,name,parentReference"})
+        except GraphNotFound:
+            memo[item_id] = None
+            return None
+    parent = (meta.get("parentReference") or {}).get("id")
+    if not parent:
+        memo[item_id] = None  # reached the drive root without meeting the tracked folder
+        return None
+    parent_path = await _path_of(ctx, channel, parent, by_id, memo, depth + 1)
+    memo[item_id] = None if parent_path is None else join_path(parent_path, meta["name"])
+    return memo[item_id]
+
+
+async def _retire(ctx: JobContext, doc: dict, kind: str, raw_id: int | None, ts: datetime) -> None:
+    """Soft-delete (kind="deleted") or detach from the channel (kind="moved": channel_id -> null) a document and,
+    for folders, everything below it. Moving out is not deleting (spec §5)."""
+    origin = doc["channel_id"]
+    stack = [doc]
+    while stack:
+        d = stack.pop()
+        if d["deleted_at"] is None and d["channel_id"] == origin:
+            changes = {"deleted_at": ts} if kind == "deleted" else {"channel_id": None, "path": None}
+            await ctx.storage.upsert_document({**d, **changes, "last_seen_at": ts})
+            await ctx.storage.add_document_event({
+                "document_id": d["id"], "event": kind, "at": ts, "old_name": d["name"], "old_path": d["path"],
+                "graph_raw_id": raw_id})
+            ctx.stats[kind] += 1
+        if d["is_folder"]:
+            stack.extend(await ctx.storage.list_child_documents(d["drive_id"], d["item_id"]))
+
+
+async def _apply_delta_page(ctx: JobContext, channel: dict, endpoint: str, items: list[dict]) -> None:
+    drive, folder_id = channel["files_drive_id"], channel["files_folder_item_id"]
+    by_id = {it["id"]: it for it in items if "deleted" not in it}
+    memo: dict = {}
+    for it in items:
+        if it["id"] == folder_id:
+            continue  # the channel folder itself
+        ts = ctx.clock()
+        raw_id = await store_raw(ctx.storage, "driveItem", endpoint, f"{drive}:{it['id']}", it)
+        doc = await ctx.storage.get_document(drive, it["id"])
+        mine = doc is not None and doc["deleted_at"] is None and doc["channel_id"] == channel["id"]
+        if "deleted" in it:
+            if mine:
+                try:  # still exists elsewhere => it left the folder; gone (recycle bin) => deleted
+                    await ctx.graph.get(f"/drives/{drive}/items/{it['id']}", {"$select": "id"})
+                    exists = True
+                except GraphNotFound:
+                    exists = False
+                await _retire(ctx, doc, "moved" if exists else "deleted", raw_id, ts)
+            continue
+        path = await _path_of(ctx, channel, it["id"], by_id, memo)
+        if path is None:  # outside the tracked folder
+            if mine:
+                await _retire(ctx, doc, "moved", raw_id, ts)
+            else:
+                ctx.stats["out_of_scope"] += 1
+            continue
+        await apply_item(ctx, channel, it, path, raw_id, ts)
+
+
+async def delta_sync_channel(ctx: JobContext, channel: dict) -> str:
+    """Apply the channel's delta feed. Returns "ok", "partial", or "needs_full" (no usable delta state yet).
+    The new deltaLink is stored only once the whole feed has been applied; a partial run resumes from the
+    saved nextLink (applying is idempotent, so a replayed page is harmless). 410 => full resync of the channel."""
+    cid = channel["id"]
+    if await ctx.storage.get_sync_state(f"fullsync:{cid}"):
+        return "needs_full"  # an unfinished full sync comes first
+    mode, state = "folder", await ctx.storage.get_sync_state(state_key("folder", cid))
+    if state is None:
+        mode, state = "root", await ctx.storage.get_sync_state(state_key("root", cid))
+    if state is None or not state["delta_link"]:
+        return "needs_full"
+    key = state_key(mode, cid)
+    drive = channel["files_drive_id"]
+    endpoint = (f"/drives/{drive}/items/{channel['files_folder_item_id']}/delta" if mode == "folder"
+                else f"/drives/{drive}/root/delta")
+    url = (state["cursor"] or {}).get("next") or state["delta_link"]
+    try:
+        async for page in ctx.graph.pages(url):
+            await _apply_delta_page(ctx, channel, endpoint, page.get("value", []))
+            nxt = page.get("@odata.nextLink")
+            if nxt:
+                if ctx.budget.expired():
+                    await ctx.storage.put_sync_state(key, delta_link=state["delta_link"], cursor={"next": nxt},
+                                                     last_status="partial")
+                    return "partial"
+                continue
+            link = page.get("@odata.deltaLink")
+            if not link:
+                raise GraphError("delta feed ended without a deltaLink", endpoint=endpoint)
+            await ctx.storage.put_sync_state(key, delta_link=link, last_status="ok")
+            await ctx.storage.update_channel(cid, last_synced_at=ctx.clock(), sync_error=None)
+            ctx.stats["delta_syncs"] += 1
+            return "ok"
+    except GraphGone:
+        await ctx.storage.delete_sync_state(key)
+        ctx.stats["resyncs"] += 1
+        return await full_sync_channel(ctx, channel)
+    except GraphError as e:
+        if mode == "folder" and e.status in (400, 405, 501):
+            log.warning("folder delta failed (status=%s code=%s); switching channel to root delta", e.status, e.code)
+            await ctx.storage.delete_sync_state(key)
+            ctx.stats["delta_fallbacks"] += 1
+            return await full_sync_channel(ctx, channel, force_root=True)
+        raise
+    return "ok"

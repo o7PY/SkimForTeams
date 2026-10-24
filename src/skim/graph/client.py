@@ -120,7 +120,7 @@ class GraphClient:
                 raise GraphNotFound(f"404 {code or ''}".strip(), status=status, code=code, endpoint=endpoint)
             if status == 410:
                 raise GraphGone(f"410 {code or ''}".strip(), status=status, code=code, endpoint=endpoint)
-            if status in (429, 503) or status == 0 or status >= 500:
+            if status in (429, 500, 502, 503, 504) or status == 0:
                 try:
                     retry_after = float(ra_header) if ra_header is not None else None
                 except ValueError:
