@@ -27,6 +27,7 @@ def state_key(channel_id: str) -> str:
 
 async def _store(ctx: JobContext, channel_id: str, msg: dict, endpoint: str, cutoff) -> bool:
     """Store one message; returns True if it counts towards the per-channel cap."""
+    ctx.stats[f"type_{msg.get('messageType') or 'message'}"] += 1  # what Graph really returned (system events!)
     created = parse_ts(msg["createdDateTime"]) if msg.get("createdDateTime") else None
     if created is not None and created < cutoff:
         ctx.stats["messages_before_cutoff"] += 1

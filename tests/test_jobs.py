@@ -301,3 +301,13 @@ async def test_run_all_links_the_posted_file_to_its_document(env):
     assert [l["message_id"] for l in await store.list_document_links(doc["id"])] == ["m1"]
     body = await (await client.post("/jobs/link-attachments", headers=AUTH)).json()
     assert body["status"] == "ok" and body["stats"].get("attachments_considered", 0) == 0  # nothing left unlinked
+
+
+async def test_backfill_force_restarts_without_duplicating_rows(env):
+    client, store, fake, graph = env
+    await client.post("/jobs/run-all", headers=AUTH)
+    before = {k: dict(v) for k, v in store.messages.items()}
+    r = await client.post("/jobs/backfill?team_id=" + TEAM + "&force=true", headers=AUTH)
+    body = await r.json()
+    assert r.status == 200 and body["status"] == "ok" and body["stats"].get("messages_created", 0) == 0
+    assert {k: dict(v) for k, v in store.messages.items()} == before

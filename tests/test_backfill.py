@@ -12,7 +12,7 @@ from skim.bot import ingest
 from skim.config import Settings
 from skim.graph.auth import StaticTokenProvider
 from skim.graph.client import GraphClient
-from skim.jobs.backfill import backfill_channel, backfill_team
+from skim.jobs.backfill import backfill_channel, backfill_team, state_key
 from skim.jobs.common import Budget, JobContext
 from skim.jobs.runner import error_text
 from skim.normalize_graph import chat_message_row, fill_empty, html_to_text
@@ -313,3 +313,36 @@ async def test_storage_backfill_adds_attachments_only_when_none_exist(store):
     assert await store.backfill_message(mrow("m2"), [att("m2")], []) == "filled"
     assert await store.backfill_message(mrow("m2"), [att("m2", "https://x/other.pdf")], []) == "unchanged"
     assert len((await store.get_message(CH, "m2"))["attachments"]) == 1
+
+
+async def test_stats_show_what_graph_returned_by_type_and_paging_covers_more_than_one_page():
+    """Live finding: far fewer messages than the Graph total. System events are not messages, so the job must say
+    how many of each type it saw; and every real message on every page must be stored."""
+    store = await make_store()
+    real = [msg(f"m{i}", 1 + i / 100) for i in range(120)]
+    system = [msg(f"s{i}", 1 + i / 100, messageType="systemEventMessage") for i in range(7)]
+    pages = [real[:50], real[50:100], real[100:] + system]
+    fake = tenant(None, {m["id"]: [] for m in real}, pages=pages)
+    _, ctx = await run(fake, store)
+    assert ctx.stats["type_systemEventMessage"] == 7 and ctx.stats["system_messages_skipped"] == 7
+    assert ctx.stats["type_message"] == ctx.stats["messages_created"]
+    assert len({k[1] for k in store.messages}) == ctx.stats["messages_created"] == 120
+
+
+async def test_force_restart_drops_the_cursor_and_does_not_duplicate():
+    store = await make_store()
+    store.teams[TEAM]["needs_initial_sync"] = False
+    fake = tenant([msg("m1", 2), msg("m2", 1)], {"m1": [], "m2": []})
+    await run_team(fake, store)
+    snapshot = copy.deepcopy(store.messages)
+    await store.put_sync_state(state_key(CH), cursor={"cutoff": iso(1), "count": 0, "next": None, "pending": [],
+                                                      "started": True, "capped": False}, last_status="partial")
+    async with fake.serve() as base:  # a stale cutoff would hide everything older than a day
+        reaim(store, base)
+        g = GraphClient(StaticTokenProvider(), base_url=base, sleep=lambda s: asyncio.sleep(0))
+        from skim.jobs.runner import step_backfill
+        ctx = JobContext(store, g, Budget(60), options={"since_days": 180, "max_messages": 2000, "force": True})
+        await step_backfill(ctx, None)
+        await g.close()
+    assert store.messages == snapshot and ctx.stats["messages_created"] == 0
+    assert not [k for k in store.sync_state if k.startswith("backfill:")]
