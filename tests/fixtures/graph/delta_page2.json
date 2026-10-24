@@ -1,0 +1,16 @@
+{
+  "@odata.deltaLink": "https://graph.microsoft.com/v1.0/drives/b!FAKEdrive0001/items/01FAKEFOLDER0001/delta?token=DELTA2",
+  "value": [
+    {
+      "id": "01FAKEFILE0002",
+      "name": "old.docx",
+      "deleted": {
+        "state": "deleted"
+      },
+      "parentReference": {
+        "driveId": "b!FAKEdrive0001",
+        "id": "01FAKEFOLDER0001"
+      }
+    }
+  ]
+}

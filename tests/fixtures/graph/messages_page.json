@@ -1,0 +1,28 @@
+{
+  "value": [
+    {
+      "id": "1760000000001",
+      "replyToId": null,
+      "messageType": "message",
+      "createdDateTime": "2026-10-01T08:00:00Z",
+      "lastModifiedDateTime": "2026-10-01T08:00:00Z",
+      "deletedDateTime": null,
+      "subject": "Welcome to the course",
+      "importance": "normal",
+      "from": {
+        "user": {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "displayName": "Test Prof",
+          "userIdentityType": "aadUser"
+        }
+      },
+      "body": {
+        "contentType": "html",
+        "content": "<p>Fake announcement text</p>"
+      },
+      "mentions": [],
+      "reactions": [],
+      "attachments": []
+    }
+  ]
+}

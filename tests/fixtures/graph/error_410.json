@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "resyncRequired",
+    "message": "The sync state generation is invalid or too old."
+  }
+}

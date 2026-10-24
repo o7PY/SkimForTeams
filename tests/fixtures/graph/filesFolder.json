@@ -1,0 +1,23 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#drives('b!FAKEdrive0001')/items/$entity",
+  "id": "01FAKEFOLDER0001",
+  "name": "General",
+  "webUrl": "https://example.sharepoint.com/sites/Team/Shared%20Documents/General",
+  "size": 1024,
+  "eTag": "\"{AAA},1\"",
+  "cTag": "\"c:{AAA},0\"",
+  "createdDateTime": "2026-10-01T10:00:00Z",
+  "lastModifiedDateTime": "2026-10-20T10:00:00Z",
+  "parentReference": {
+    "driveId": "b!FAKEdrive0001",
+    "driveType": "documentLibrary",
+    "id": "01FAKEROOT0001"
+  },
+  "fileSystemInfo": {
+    "createdDateTime": "2026-10-01T10:00:00Z",
+    "lastModifiedDateTime": "2026-10-20T10:00:00Z"
+  },
+  "folder": {
+    "childCount": 1
+  }
+}

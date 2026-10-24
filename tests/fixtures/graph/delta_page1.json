@@ -1,0 +1,33 @@
+{
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/drives/b!FAKEdrive0001/items/01FAKEFOLDER0001/delta?token=PAGE2",
+  "value": [
+    {
+      "id": "01FAKEFOLDER0001",
+      "name": "General",
+      "folder": {
+        "childCount": 2
+      },
+      "parentReference": {
+        "driveId": "b!FAKEdrive0001",
+        "id": "01FAKEROOT0001"
+      },
+      "lastModifiedDateTime": "2026-10-21T10:00:00Z"
+    },
+    {
+      "id": "01FAKEFILE0001",
+      "name": "syllabus-v2.pdf",
+      "size": 2100,
+      "file": {
+        "mimeType": "application/pdf"
+      },
+      "webUrl": "https://example.sharepoint.com/sites/Team/Shared%20Documents/General/syllabus-v2.pdf",
+      "eTag": "\"{BBB},3\"",
+      "cTag": "\"c:{BBB},3\"",
+      "lastModifiedDateTime": "2026-10-21T10:00:00Z",
+      "parentReference": {
+        "driveId": "b!FAKEdrive0001",
+        "id": "01FAKEFOLDER0001"
+      }
+    }
+  ]
+}

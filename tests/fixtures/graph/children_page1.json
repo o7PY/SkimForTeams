@@ -1,0 +1,34 @@
+{
+  "value": [
+    {
+      "id": "01FAKEFILE0001",
+      "name": "syllabus.pdf",
+      "size": 2048,
+      "webUrl": "https://example.sharepoint.com/sites/Team/Shared%20Documents/General/syllabus.pdf",
+      "eTag": "\"{BBB},2\"",
+      "cTag": "\"c:{BBB},2\"",
+      "createdDateTime": "2026-10-02T09:00:00Z",
+      "lastModifiedDateTime": "2026-10-03T09:00:00Z",
+      "createdBy": {
+        "user": {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "displayName": "Test Prof"
+        }
+      },
+      "lastModifiedBy": {
+        "user": {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "displayName": "Test Prof"
+        }
+      },
+      "parentReference": {
+        "driveId": "b!FAKEdrive0001",
+        "driveType": "documentLibrary",
+        "id": "01FAKEFOLDER0001"
+      },
+      "file": {
+        "mimeType": "application/pdf"
+      }
+    }
+  ]
+}
