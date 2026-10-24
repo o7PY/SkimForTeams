@@ -17,6 +17,7 @@ from .common import Budget, JobContext
 from .backfill import backfill_team
 from .discover import discover_team
 from .files_sync import delta_sync_channel, full_sync_channel
+from .link_attachments import link_attachments
 
 log = logging.getLogger("skim.jobs")
 LOCK = "jobs"
@@ -101,9 +102,16 @@ async def step_backfill_initial(ctx: JobContext, team_id: str | None) -> str:
     return await step_backfill(ctx, team_id, force=False)
 
 
-EXTRA_RUN_ALL_STEPS: list[Step] = [step_backfill_initial]
+async def step_link_attachments(ctx: JobContext, team_id: str | None) -> str:
+    teams = select_teams(await ctx.storage.list_sync_teams(), team_id) if team_id else [None]
+    for team in teams:
+        await link_attachments(ctx, team["id"] if team else None)
+    return "ok"
+
+
+EXTRA_RUN_ALL_STEPS: list[Step] = [step_backfill_initial, step_link_attachments]
 STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_files, "backfill": step_backfill,
-                          "run-all": step_run_all}
+                          "link-attachments": step_link_attachments, "run-all": step_run_all}
 
 
 # ---------------------------------------------------------------------------- runner

@@ -463,6 +463,29 @@ class PostgresStorage:
                 await conn.execute("update messages set backfilled_at=now() where conversation_id=$1 and message_id=$2", cid, mid)
             return result
 
+    async def list_unlinked_attachments(self, team_id, limit) -> list[dict]:
+        assert self.pool
+        return [dict(r) for r in await self.pool.fetch(
+            """select a.id, a.conversation_id, c.team_id, a.name, a.content_url
+               from attachments a join channels c on c.id = a.conversation_id
+               where a.content_url is not null and ($1::text is null or c.team_id = $1)
+                 and not exists (select 1 from attachment_document_links l where l.attachment_id = a.id)
+               order by a.id limit $2""", team_id, limit)]
+
+    async def find_document_by_url(self, team_id, web_url_norm) -> dict | None:
+        assert self.pool
+        r = await self.pool.fetchrow(
+            "select * from documents where team_id=$1 and web_url_norm=$2 order by deleted_at is not null, id desc limit 1",
+            team_id, web_url_norm)
+        return dict(r) if r else None
+
+    async def find_document_by_path(self, channel_id, path) -> dict | None:
+        assert self.pool
+        r = await self.pool.fetchrow(
+            "select * from documents where channel_id=$1 and lower(path)=lower($2) order by deleted_at is not null, id desc limit 1",
+            channel_id, path)
+        return dict(r) if r else None
+
     async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None:
         assert self.pool
         await self.pool.execute(

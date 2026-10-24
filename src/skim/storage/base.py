@@ -91,5 +91,15 @@ class Storage(Protocol):
         (P2-D-114). Attachments/reactions are added only when the message has none. Returns
         'created' | 'filled' | 'unchanged'."""
 
+    async def list_unlinked_attachments(self, team_id: str | None, limit: int) -> list[dict]:
+        """File-reference attachments (content_url set) posted in a tracked channel and not yet linked; each row
+        has id, conversation_id (= channel id), team_id, name, content_url."""
+
+    async def find_document_by_url(self, team_id: str, web_url_norm: str) -> dict | None:
+        """Live document of the team with this normalised URL (else a deleted one)."""
+
+    async def find_document_by_path(self, channel_id: str, path: str) -> dict | None:
+        """Live document of the channel at this relative path, case-insensitive (else a deleted one)."""
+
     async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None: ...
     async def list_document_links(self, document_id: int) -> list[dict]: ...

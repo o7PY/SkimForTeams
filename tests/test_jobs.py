@@ -32,7 +32,9 @@ def fake_tenant() -> FakeGraph:
          "webUrl": "https://x.sharepoint.com/General/syllabus.pdf", "parentReference": {"driveId": DRIVE, "id": FOLDER}}]})
     f.add(f"/teams/{GID}/channels/{CHAN}/messages", {"value": [
         {"id": "m1", "messageType": "message", "createdDateTime": "2999-01-01T00:00:00Z", "subject": "Hello",
-         "from": {"user": {"id": "u1", "displayName": "Prof"}}, "body": {"contentType": "html", "content": "<p>hi</p>"}}]})
+         "from": {"user": {"id": "u1", "displayName": "Prof"}}, "body": {"contentType": "html", "content": "<p>hi</p>"},
+         "attachments": [{"id": "att1", "contentType": "reference", "name": "syllabus.pdf",
+                          "contentUrl": "https://x.sharepoint.com/General/syllabus.pdf"}]}]})
     f.add(f"/teams/{GID}/channels/{CHAN}/messages/m1/replies", {"value": [
         {"id": "r1", "replyToId": "m1", "messageType": "message", "createdDateTime": "2999-01-01T00:01:00Z",
          "body": {"contentType": "text", "content": "re"}}]})
@@ -289,3 +291,13 @@ async def test_backfill_endpoint_is_explicit_and_validates_since_days(env):
     assert (await client.post("/jobs/backfill?since_days=abc", headers=AUTH)).status == 400
     assert (await client.post("/jobs/backfill?since_days=0", headers=AUTH)).status == 400
     assert (await client.post("/jobs/backfill", headers={"Authorization": "Bearer x"})).status == 401
+
+
+async def test_run_all_links_the_posted_file_to_its_document(env):
+    client, store, fake, graph = env
+    body = await (await client.post("/jobs/run-all", headers=AUTH)).json()
+    assert body["stats"]["links_web_url"] == 1
+    doc = await store.get_document(DRIVE, "a")
+    assert [l["message_id"] for l in await store.list_document_links(doc["id"])] == ["m1"]
+    body = await (await client.post("/jobs/link-attachments", headers=AUTH)).json()
+    assert body["status"] == "ok" and body["stats"].get("attachments_considered", 0) == 0  # nothing left unlinked

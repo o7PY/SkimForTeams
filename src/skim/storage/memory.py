@@ -340,6 +340,30 @@ class MemoryStorage:
             cur["backfilled_at"] = now
         return "filled" if changed else "unchanged"
 
+    async def list_unlinked_attachments(self, team_id, limit) -> list[dict]:
+        linked = {a for a, _, _ in self.links}
+        out = []
+        for a in self.attachments:
+            ch = self.channels.get(a["conversation_id"])
+            if ch is None or not a.get("content_url") or a["id"] in linked or (team_id and ch["team_id"] != team_id):
+                continue
+            out.append({"id": a["id"], "conversation_id": a["conversation_id"], "team_id": ch["team_id"],
+                        "name": a.get("name"), "content_url": a["content_url"]})
+        return out[:limit]
+
+    @staticmethod
+    def _best(docs: list[dict]) -> dict | None:
+        docs.sort(key=lambda d: (d["deleted_at"] is not None, -d["id"]))
+        return dict(docs[0]) if docs else None
+
+    async def find_document_by_url(self, team_id, web_url_norm) -> dict | None:
+        return self._best([d for d in self.documents.values()
+                           if d["team_id"] == team_id and d["web_url_norm"] == web_url_norm])
+
+    async def find_document_by_path(self, channel_id, path) -> dict | None:
+        return self._best([d for d in self.documents.values() if d["channel_id"] == channel_id
+                           and d["path"] is not None and d["path"].lower() == path.lower()])
+
     async def add_attachment_link(self, attachment_id: int, document_id: int, method: str) -> None:
         if not any(a == attachment_id and d == document_id for a, d, _ in self.links):
             self.links.add((attachment_id, document_id, method))
