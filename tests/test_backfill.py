@@ -347,3 +347,27 @@ async def test_force_restart_drops_the_cursor_and_does_not_duplicate():
         await g.close()
     assert store.messages == snapshot and ctx.stats["messages_created"] == 0
     assert not [k for k in store.sync_state if k.startswith("backfill:")]
+
+
+def test_unknown_future_value_is_a_message_only_with_a_user_author():
+    """Live: 8 Graph items of type unknownFutureValue were all system notes (no user, no real body). A user-authored
+    one must not be dropped just because the v1.0 enum does not know its type."""
+    system_like = msg("u1", messageType="unknownFutureValue", **{"from": {"application": {"id": "app"}}})
+    no_from = msg("u2", messageType="unknownFutureValue", **{"from": None})
+    user = msg("u3", messageType="unknownFutureValue")
+    assert chat_message_row(system_like, CH) is None and chat_message_row(no_from, CH) is None
+    row = chat_message_row(user, CH)
+    assert row is not None and row["message"]["message_id"] == "u3" and row["message"]["from_aad_id"] == "u-1"
+    assert chat_message_row({**user, "messageType": "systemEventMessage"}, CH) is None  # always a system event
+    assert chat_message_row({**user, "messageType": "somethingElse"}, CH) is None
+    assert chat_message_row(msg("m", messageType=None), CH) is not None  # missing type = message (as before)
+
+
+async def test_backfill_stores_user_authored_unknown_future_value_and_skips_the_system_ones():
+    store = await make_store()
+    top = [msg("a", 3), msg("u-sys", 2, messageType="unknownFutureValue", **{"from": None}),
+           msg("u-user", 1, messageType="unknownFutureValue")]
+    fake = tenant(top, {"a": [], "u-user": []})
+    _, ctx = await run(fake, store)
+    assert {k[1] for k in store.messages} == {"a", "u-user"}
+    assert ctx.stats["type_unknownFutureValue"] == 2 and ctx.stats["system_messages_skipped"] == 1

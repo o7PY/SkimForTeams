@@ -98,10 +98,20 @@ def html_to_text(content: str | None) -> str | None:
     return re.sub(r"[ \t]+\n", "\n", s).strip()
 
 
+def is_user_message(msg: dict) -> bool:
+    """P2-D-142: a real message is messageType "message", or the new-to-the-API type "unknownFutureValue" when a
+    user wrote it (Graph returns that value for types the v1.0 enum does not name yet). systemEventMessage and
+    anything else, or an unknownFutureValue without a user author, is not a message (kept raw only)."""
+    mtype = msg.get("messageType") or "message"
+    if mtype == "message":
+        return True
+    return mtype == "unknownFutureValue" and bool((((msg.get("from") or {}).get("user")) or {}).get("id"))
+
+
 def chat_message_row(msg: dict, conversation_id: str) -> dict | None:
     """One Graph chatMessage -> {"message", "attachments", "reactions"}; None for system events (member added,
     call ended, ...). The message dict has the `messages` columns that backfill may fill; `source` is 'graph'."""
-    if msg.get("messageType", "message") != "message" or not msg.get("id"):
+    if not msg.get("id") or not is_user_message(msg):
         return None
     mid = str(msg["id"])
     frm = msg.get("from") or {}
