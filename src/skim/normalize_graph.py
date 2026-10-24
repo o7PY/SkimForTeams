@@ -8,7 +8,7 @@ import re
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from .normalize import parse_ts
+from .normalize import has_markup, parse_ts, to_plain_text
 
 _DOWNLOAD_URL_KEYS = ("@microsoft.graph.downloadUrl", "@content.downloadUrl")
 
@@ -90,12 +90,10 @@ FILLABLE = ("reply_to_id", "from_aad_id", "from_name", "text", "html", "importan
 
 
 def html_to_text(content: str | None) -> str | None:
-    """Plain text of a Teams HTML body: @mentions dropped like the live path (strip_mentions), tags removed."""
+    """Plain text of a Teams HTML body: @mentions dropped like the live path, markup converted (to_plain_text)."""
     if content is None:
         return None
-    s = _BR.sub("\n", _AT_HTML.sub("", content))
-    s = html_lib.unescape(_TAGS.sub("", s))
-    return re.sub(r"[ \t]+\n", "\n", s).strip()
+    return to_plain_text(content, drop_mentions=True) if has_markup(content) else content.strip()
 
 
 def is_user_message(msg: dict) -> bool:

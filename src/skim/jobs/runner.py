@@ -125,6 +125,12 @@ async def step_enrich_messages(ctx: JobContext, team_id: str | None) -> str:
     return "partial" if partial else "ok"
 
 
+async def step_fix_text(ctx: JobContext, team_id: str | None) -> str:
+    """P2-D-144: idempotent clean-up of message text that still carries HTML (no Graph calls)."""
+    ctx.stats["texts_fixed"] += await ctx.storage.fix_markup_texts(1000)
+    return "ok"
+
+
 async def step_link_attachments(ctx: JobContext, team_id: str | None) -> str:
     teams = select_teams(await ctx.storage.list_sync_teams(), team_id) if team_id else [None]
     for team in teams:
@@ -132,8 +138,9 @@ async def step_link_attachments(ctx: JobContext, team_id: str | None) -> str:
     return "ok"
 
 
-EXTRA_RUN_ALL_STEPS: list[Step] = [step_backfill_initial, step_enrich_messages, step_refill_empty, step_link_attachments]
+EXTRA_RUN_ALL_STEPS: list[Step] = [step_fix_text, step_backfill_initial, step_enrich_messages, step_refill_empty, step_link_attachments]
 STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_files, "backfill": step_backfill,
+                          "fix-text": step_fix_text,
                           "enrich-messages": step_enrich_messages,
                           "refill-empty": step_refill_empty,
                           "link-attachments": step_link_attachments, "run-all": step_run_all}

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import html as html_lib
 import json
 import re
 from dataclasses import dataclass, field
@@ -85,7 +86,31 @@ def raw_fields(activity: dict) -> dict:
 def strip_mentions(text: str | None) -> str | None:
     if text is None:
         return None
-    return _AT_TAG.sub("", text).strip()
+    return to_plain_text(_AT_TAG.sub("", text).strip())
+
+
+_AT_ELEMENT = re.compile(r"<at\b[^>]*>.*?</at>", re.I | re.S)
+_ANY_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
+_ENTITY = re.compile(r"&(?:[a-zA-Z]{2,8}|#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6});")
+_LINE_BREAK = re.compile(r"<\s*(?:br|/p|/div|/li|/tr|/h[1-6]|/blockquote|/ul|/ol|/table)\b[^>]*>", re.I)
+_BLANKS = re.compile(r"\n{3,}")
+
+
+def has_markup(text: str | None) -> bool:
+    """True if the text carries HTML tags or entities (Teams sends HTML in `text` for rich posts)."""
+    return bool(text) and bool(_ANY_TAG.search(text) or _ENTITY.search(text))
+
+
+def to_plain_text(text: str | None, drop_mentions: bool = False) -> str | None:
+    """P2-D-144: HTML -> plain text. <br> and closing block tags become newlines, other tags are removed, entities are
+    unescaped, runs of blank lines collapse to one blank line. Text without any tag or entity is returned as is,
+    so plain text that Teams sent as text is never altered. `drop_mentions` also removes the mention's name."""
+    if text is None or not has_markup(text):
+        return text
+    s = _AT_ELEMENT.sub("", text) if drop_mentions else text
+    s = html_lib.unescape(_ANY_TAG.sub("", _LINE_BREAK.sub("\n", s))).replace("\xa0", " ")
+    s = "\n".join(line.rstrip() for line in s.replace("\r\n", "\n").split("\n"))
+    return _BLANKS.sub("\n\n", s).strip()
 
 
 @dataclass

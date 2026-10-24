@@ -371,3 +371,22 @@ async def test_backfill_stores_user_authored_unknown_future_value_and_skips_the_
     _, ctx = await run(fake, store)
     assert {k[1] for k in store.messages} == {"a", "u-user"}
     assert ctx.stats["type_unknownFutureValue"] == 2 and ctx.stats["system_messages_skipped"] == 1
+
+
+def test_to_plain_text_converts_br_and_blocks_and_leaves_plain_text_alone():
+    from skim.normalize import has_markup, strip_mentions, to_plain_text
+    live = "Test 1: LNO<br>Test 2: AIDS<br>Test 3: ML<br><br><br><br>Bring ID &amp; pen&nbsp;please"
+    assert to_plain_text(live) == "Test 1: LNO\nTest 2: AIDS\nTest 3: ML\n\nBring ID & pen please"
+    assert to_plain_text("<div>a</div><div>b</div><ul><li>x</li><li>y</li></ul>") == "a\nb\nx\ny"
+    assert to_plain_text("<b>bold</b> <a href='x'>link</a>") == "bold link"
+    for plain in ("a < b & c", "x <3 y", "1 &2", "line1\nline2", "", None):
+        assert to_plain_text(plain) == plain and not has_markup(plain)
+    assert strip_mentions("<at>Skim</at> Test 1<br>Test 2") == "Skim Test 1\nTest 2"
+
+
+def test_graph_body_html_and_live_text_give_the_same_plain_text():
+    body = "<p>Test 1: LNO<br>Test 2: AIDS</p><attachment id=\"a\"></attachment>"
+    row = chat_message_row(msg("g1", body=None) | {"body": {"contentType": "html", "content": body}}, CH)
+    assert row["message"]["text"] == "Test 1: LNO\nTest 2: AIDS" and row["message"]["html"] == body  # html untouched
+    text_body = chat_message_row(msg("g2") | {"body": {"contentType": "text", "content": "a &amp; b"}}, CH)
+    assert text_body["message"]["text"] == "a &amp; b"  # a text/plain body is not HTML: unchanged

@@ -91,6 +91,10 @@ class Storage(Protocol):
         (P2-D-114). Attachments the message lacks (missing_attachments) are added; reactions only when it has none.
         Returns 'created' | 'filled' | 'unchanged'."""
 
+    async def fix_markup_texts(self, limit: int) -> int:
+        """P2-D-144: messages and message_versions whose `text` still carries HTML tags/entities get it converted
+        with normalize.to_plain_text (html columns and raw payloads are untouched). Returns rows changed."""
+
     async def list_empty_messages(self, team_id: str | None, limit: int) -> list[dict]:
         """Live-captured, non-deleted messages of tracked channels with neither text nor html (a post with a file
         upload can arrive empty), newest first: conversation_id, message_id, reply_to_id, team_id."""

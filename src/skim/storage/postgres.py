@@ -10,7 +10,7 @@ from typing import Any
 
 import asyncpg
 
-from ..normalize import MessageEvent
+from ..normalize import MessageEvent, to_plain_text
 from ..normalize_graph import fill_empty, missing_attachments
 
 log = logging.getLogger("skim.storage")
@@ -464,6 +464,23 @@ class PostgresStorage:
             if result == "filled":
                 await conn.execute("update messages set backfilled_at=now() where conversation_id=$1 and message_id=$2", cid, mid)
             return result
+
+    async def fix_markup_texts(self, limit) -> int:
+        assert self.pool
+        pattern = r"</?[a-zA-Z][^>]*>|&([a-zA-Z]{2,8}|#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6});"
+        n = 0
+        for table, keys in (("messages", "conversation_id, message_id"),
+                            ("message_versions", "conversation_id, message_id, version")):
+            cols = [k.strip() for k in keys.split(",")]
+            where = " and ".join(f"{c}=${i + 1}" for i, c in enumerate(cols))
+            rows = await self.pool.fetch(f"select {keys}, text from {table} where text ~ $1 limit $2", pattern, limit - n)
+            for r in rows:
+                new = to_plain_text(r["text"])
+                if new != r["text"]:
+                    await self.pool.execute(f"update {table} set text=${len(cols) + 1} where {where}",
+                                            *[r[c] for c in cols], new)
+                    n += 1
+        return n
 
     async def list_empty_messages(self, team_id, limit) -> list[dict]:
         assert self.pool

@@ -6,7 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from ..normalize import MessageEvent
+from ..normalize import MessageEvent, has_markup, to_plain_text
 from ..normalize_graph import fill_empty, missing_attachments
 
 
@@ -340,6 +340,16 @@ class MemoryStorage:
         if changed:
             cur["backfilled_at"] = now
         return "filled" if changed else "unchanged"
+
+    async def fix_markup_texts(self, limit) -> int:
+        n = 0
+        for row in [*self.messages.values(), *self.versions]:
+            if n >= limit:
+                break
+            if has_markup(row.get("text")):
+                row["text"] = to_plain_text(row["text"])
+                n += 1
+        return n
 
     async def list_empty_messages(self, team_id, limit) -> list[dict]:
         out = []
