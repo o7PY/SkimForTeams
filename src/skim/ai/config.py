@@ -10,6 +10,13 @@ log = logging.getLogger("skim.ai")
 _TRUE = {"1", "true", "yes", "on"}
 
 
+def _isnum(v) -> bool:
+    try:
+        return v in (None, "") or float(v) >= 0
+    except ValueError:
+        return False
+
+
 @dataclass(frozen=True)
 class AIConfig:
     enabled: bool = False
@@ -24,6 +31,9 @@ class AIConfig:
     max_docs_per_run: int = 10
     max_embeds_per_run: int = 500
     max_attempts: int = 3
+    min_call_interval: float = 2.0   # seconds between calls to one provider (free-tier tokens/minute)
+    max_retry_after: float = 20.0
+    rate_retries: int = 1
     doc_max_bytes: int = 20_000_000
     doc_max_pages: int = 50
     timezone: str = "Asia/Kolkata"
@@ -54,6 +64,7 @@ class AIConfig:
             prompt_version=env.get("PROMPT_VERSION") or cls.prompt_version,
             max_messages_per_run=num("AI_MAX_MESSAGES_PER_RUN", 200), max_docs_per_run=num("AI_MAX_DOCS_PER_RUN", 10),
             max_embeds_per_run=num("AI_MAX_EMBEDS_PER_RUN", 500), max_attempts=num("AI_MAX_ATTEMPTS", 3),
+            min_call_interval=float(env.get("AI_MIN_CALL_INTERVAL") or 2.0) if _isnum(env.get("AI_MIN_CALL_INTERVAL")) else 2.0,
             doc_max_bytes=num("DOC_MAX_BYTES", 20_000_000), doc_max_pages=num("DOC_MAX_PAGES", 50),
             timezone=env.get("COURSE_TIMEZONE") or "Asia/Kolkata",
             staff_aad_ids=frozenset(x.strip() for x in (env.get("STAFF_AAD_IDS") or "").split(",") if x.strip()))

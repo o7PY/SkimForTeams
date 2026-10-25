@@ -12,7 +12,7 @@ from skim.storage.memory import MemoryStorage
 
 IST = ZoneInfo("Asia/Kolkata")
 CONV = "19:chan@thread.tacv2"
-CFG = AIConfig(enabled=True, groq_api_key="k", gemini_api_key="k", groq_model="m", prompt_version="p3-test")
+CFG = AIConfig(enabled=True, groq_api_key="k", gemini_api_key="k", groq_model="m", prompt_version="p3-test", min_call_interval=0.0)
 
 
 def ist(s: str) -> datetime:

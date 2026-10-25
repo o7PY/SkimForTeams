@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections import Counter
 from dataclasses import dataclass
 from typing import Awaitable, Callable, TypeVar
@@ -34,8 +35,14 @@ class Completion:
 
 
 class Router:
-    def __init__(self, providers: list[LLMProvider], sleep: Callable[[float], Awaitable[None]] = asyncio.sleep):
-        self.providers, self._sleep = providers, sleep
+    def __init__(self, providers: list[LLMProvider], sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+                 min_interval: float = 0.0, max_retry_after: float = MAX_RETRY_AFTER_SECONDS, rate_retries: int = 1,
+                 clock: Callable[[], float] = time.monotonic):
+        """min_interval: minimum seconds between calls to the same provider (free-tier tokens-per-minute pacing).
+        max_retry_after / rate_retries: how long and how often to wait out a 429 before giving up on a provider."""
+        self.providers, self._sleep, self._clock = providers, sleep, clock
+        self.min_interval, self.max_retry_after, self.rate_retries = min_interval, max_retry_after, rate_retries
+        self._last_call: dict[str, float] = {}
         self.stats: Counter = Counter()
 
     async def complete(self, model_cls: type[T], system: str, user: str) -> Completion:
@@ -48,6 +55,8 @@ class Router:
                 return await self._with(p, model_cls, schema, system, user)
             except _Invalid:
                 last = "invalid_output"
+                log.warning(json.dumps({"event": "ai_provider_failed", "provider": p.name, "model": p.model,
+                                        "error_class": "invalid_output", "status": None}))
             except ProviderError as e:
                 last = e.kind
                 log.warning(json.dumps({"event": "ai_provider_failed", "provider": p.name, "model": p.model,
@@ -68,19 +77,27 @@ class Router:
             except ValueError:
                 raise _Invalid() from None
 
+    async def _pace(self, p: LLMProvider) -> None:
+        if self.min_interval:
+            wait = self._last_call.get(p.name, -1e9) + self.min_interval - self._clock()
+            if wait > 0:
+                await self._sleep(wait)
+        self._last_call[p.name] = self._clock()
+
     async def _call(self, p: LLMProvider, system, user, schema, repair):
-        self.stats["calls"] += 1
-        self.stats[f"calls_{p.name}"] += 1
-        try:
-            reply = await p.complete_json(system, user, schema, repair)
-        except ProviderError as e:
-            if e.kind != "rate_limit" or (e.retry_after or 1.0) > MAX_RETRY_AFTER_SECONDS:
-                raise
-            self.stats["rate_limited"] += 1
-            await self._sleep(e.retry_after or 1.0)  # respect Retry-After, once
+        for attempt in range(self.rate_retries + 1):
+            await self._pace(p)
             self.stats["calls"] += 1
             self.stats[f"calls_{p.name}"] += 1
-            reply = await p.complete_json(system, user, schema, repair)
+            try:
+                reply = await p.complete_json(system, user, schema, repair)
+                break
+            except ProviderError as e:
+                wait = e.retry_after if e.retry_after is not None else 5.0 * (attempt + 1)
+                if e.kind != "rate_limit" or attempt >= self.rate_retries or wait > self.max_retry_after:
+                    raise
+                self.stats["rate_limited"] += 1
+                await self._sleep(wait)  # respect Retry-After
         if reply.tokens:
             self.stats["tokens"] += reply.tokens
         return reply

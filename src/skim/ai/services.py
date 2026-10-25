@@ -24,7 +24,8 @@ class AIServices:
     def build(cls, cfg: AIConfig, storage: Any, providers: list | None = None) -> "AIServices":
         providers = providers if providers is not None else [GroqProvider(cfg.groq_api_key, cfg.groq_model),
                                                              GeminiProvider(cfg.gemini_api_key, cfg.gemini_model)]
-        router = Router(providers)
+        router = Router(providers, min_interval=cfg.min_call_interval, max_retry_after=cfg.max_retry_after,
+                        rate_retries=cfg.rate_retries)
         return cls(cfg, router, Pipeline(storage, router, cfg))
 
     @classmethod

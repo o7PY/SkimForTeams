@@ -45,6 +45,7 @@ async def main() -> int:
     ap.add_argument("--prompt-version", default=None, help="override PROMPT_VERSION for this run")
     ap.add_argument("--note", default="", help="what changed since the last run")
     ap.add_argument("--pause", type=float, default=20.0, help="seconds to wait before retrying failed items (rate limits)")
+    ap.add_argument("--interval", type=float, default=4.0, help="seconds between calls to one provider (free-tier pacing)")
     ap.add_argument("--no-log", action="store_true")
     a = ap.parse_args()
 
@@ -61,7 +62,8 @@ async def main() -> int:
         if not base.enabled:
             print("AI is not configured: set GROQ_API_KEY, GEMINI_API_KEY and GROQ_MODEL (see the log line above).", file=sys.stderr)
             return 2
-        router = Router([GroqProvider(base.groq_api_key, base.groq_model), GeminiProvider(base.gemini_api_key, base.gemini_model)])
+        router = Router([GroqProvider(base.groq_api_key, base.groq_model), GeminiProvider(base.gemini_api_key, base.gemini_model)],
+                        min_interval=a.interval, max_retry_after=70.0, rate_retries=3)
     from dataclasses import replace
     cfg = eval_config(replace(base, prompt_version=a.prompt_version or base.prompt_version, max_attempts=8))
     store = MemoryStorage()

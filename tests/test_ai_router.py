@@ -79,3 +79,47 @@ async def test_stats_are_numbers_only():
     await r.complete(MessageExtraction, "secret prompt text", "secret user text")
     assert all(isinstance(v, int) for v in r.stats.values())
     assert "secret" not in json.dumps(dict(r.stats))
+
+
+async def test_pacing_spaces_calls_to_one_provider():
+    slept, now = [], [100.0]
+
+    async def sleep(s):
+        slept.append(round(s, 3)); now[0] += s
+
+    r = Router([FakeProvider("groq", [GOOD])], sleep=sleep, min_interval=4.0, clock=lambda: now[0])
+    await r.complete(MessageExtraction, "s", "u")
+    now[0] += 1.0
+    await r.complete(MessageExtraction, "s", "u")
+    assert slept == [3.0]  # first call free, second waits out the rest of the 4 s
+
+
+async def test_rate_limit_is_retried_several_times_when_configured():
+    slept = []
+
+    async def sleep(s):
+        slept.append(s)
+
+    a = FakeProvider("groq", [ProviderError("rate_limit", 429, retry_after=30.0)] * 2 + [GOOD])
+    r = Router([a], sleep=sleep, max_retry_after=70.0, rate_retries=3)
+    assert (await r.complete(MessageExtraction, "s", "u")).provider == "groq"
+    assert slept == [30.0, 30.0] and r.stats["rate_limited"] == 2
+
+
+async def test_rate_limit_without_retry_after_backs_off_and_eventually_falls_back():
+    a, b = FakeProvider("groq", [ProviderError("rate_limit", 429)]), FakeProvider("gemini", [GOOD])
+    slept = []
+
+    async def sleep(s):
+        slept.append(s)
+
+    c = await Router([a, b], sleep=sleep, rate_retries=2).complete(MessageExtraction, "s", "u")
+    assert c.provider == "gemini" and slept == [5.0, 10.0] and len(a.calls) == 3
+
+
+async def test_invalid_output_is_logged_without_content(caplog):
+    import logging
+    a = FakeProvider("groq", ["SECRET garbage", "SECRET garbage"])
+    with caplog.at_level(logging.WARNING, logger="skim.ai"), pytest.raises(AllProvidersFailed):
+        await router(a).complete(MessageExtraction, "s", "u")
+    assert "invalid_output" in caplog.text and "SECRET" not in caplog.text
