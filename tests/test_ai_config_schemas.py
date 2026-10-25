@@ -58,3 +58,14 @@ def test_strict_schema_keeps_every_model_field():
         assert set(node["properties"]) == set(model.model_fields)
         assert set(node["required"]) == set(model.model_fields)
     assert "title" in item["properties"]
+
+
+def test_nim_is_optional_config_and_added_as_last_provider():
+    from skim.ai.config import AIConfig
+    from skim.ai.services import AIServices
+    base = {"GROQ_API_KEY": "g", "GEMINI_API_KEY": "m", "GROQ_MODEL": "x"}
+    assert not AIConfig.from_env(base).nim_api_key
+    cfg = AIConfig.from_env({**base, "NIM_API_KEY": "nvapi-SECRET", "NIM_MODEL": "meta/llama"})
+    assert cfg.enabled and "nvapi-SECRET" not in repr(cfg)
+    assert [p.name for p in AIServices.build(cfg, object()).router.providers] == ["groq", "gemini", "nim"]
+    assert [p.name for p in AIServices.build(AIConfig.from_env(base), object()).router.providers] == ["groq", "gemini"]

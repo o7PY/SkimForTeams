@@ -114,6 +114,9 @@ class _Invalid(Exception):
 
 def _parse(model_cls: type[T], text: str) -> T:
     """JSON text -> validated model. ValueError (incl. pydantic's) on anything wrong."""
+    a, b = text.find("{"), text.rfind("}")
+    if 0 < a or (a == 0 and b < len(text.strip()) - 1):
+        text = text[a:b + 1] if a >= 0 and b > a else text  # tolerate ```json fences / chatter around the object
     try:
         return model_cls.model_validate(json.loads(text))
     except (json.JSONDecodeError, ValidationError) as e:

@@ -9,6 +9,7 @@ from .config import AIConfig
 from .pipeline import Pipeline
 from .providers.gemini import GeminiProvider
 from .providers.groq import GroqProvider
+from .providers.nim import NimProvider
 from .providers.router import Router
 
 log = logging.getLogger("skim.ai")
@@ -22,8 +23,10 @@ class AIServices:
 
     @classmethod
     def build(cls, cfg: AIConfig, storage: Any, providers: list | None = None) -> "AIServices":
-        providers = providers if providers is not None else [GroqProvider(cfg.groq_api_key, cfg.groq_model),
-                                                             GeminiProvider(cfg.gemini_api_key, cfg.gemini_model)]
+        if providers is None:
+            providers = [GroqProvider(cfg.groq_api_key, cfg.groq_model), GeminiProvider(cfg.gemini_api_key, cfg.gemini_model)]
+            if cfg.nim_api_key and cfg.nim_model:  # optional last-resort backup
+                providers.append(NimProvider(cfg.nim_api_key, cfg.nim_model))
         router = Router(providers, min_interval=cfg.min_call_interval, max_retry_after=cfg.max_retry_after,
                         rate_retries=cfg.rate_retries)
         return cls(cfg, router, Pipeline(storage, router, cfg))

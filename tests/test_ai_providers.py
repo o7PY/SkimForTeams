@@ -81,3 +81,32 @@ async def test_gemini_json_mode_request_and_parse():
     await p.close(); await srv.close()
     assert r.text == '{"a":"y"}' and r.tokens == 5 and seen["key"] == "MK"
     assert seen["body"]["generationConfig"]["responseMimeType"] == "application/json"
+
+
+async def test_nim_sends_guided_json_and_schema_in_prompt_and_drops_nvext_when_rejected():
+    bodies = []
+
+    async def h(req):
+        assert req.headers["Authorization"] == "Bearer K"
+        bodies.append(await req.json())
+        if len(bodies) == 1:
+            return web.json_response({"error": {"message": "unknown field nvext"}}, status=400)
+        return web.json_response({"choices": [{"message": {"content": '{"a":"x"}'}}], "usage": {"total_tokens": 5}})
+
+    from skim.ai.providers.nim import NimProvider
+    srv = await serve(h, "/chat")
+    p = NimProvider("K", "meta/llama-3.3-70b-instruct", url=str(srv.make_url("/chat")))
+    r = await p.complete_json("sys", "usr", SCHEMA)
+    await p.close(); await srv.close()
+    assert p.name == "nim" and r.text == '{"a":"x"}'
+    assert bodies[0]["nvext"] == {"guided_json": SCHEMA} and "JSON schema" in bodies[0]["messages"][0]["content"]
+    assert "nvext" not in bodies[1] and "response_format" not in bodies[1]
+
+
+def test_parse_tolerates_code_fences_and_chatter():
+    from skim.ai.providers.router import _parse
+    from skim.ai.schemas import ResolveChoice
+    assert _parse(ResolveChoice, '```json\n{"match": "new"}\n```').match == "new"
+    assert _parse(ResolveChoice, 'Sure! {"match": "7"} hope that helps').match == "7"
+    with pytest.raises(ValueError):
+        _parse(ResolveChoice, "no json here")

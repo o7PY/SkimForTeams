@@ -24,6 +24,7 @@ from skim.ai.evaluate import eval_config, format_report, load_rows, replay, scor
 from skim.ai.pipeline import Pipeline  # noqa: E402
 from skim.ai.providers.gemini import GeminiProvider  # noqa: E402
 from skim.ai.providers.groq import GroqProvider  # noqa: E402
+from skim.ai.providers.nim import NimProvider  # noqa: E402
 from skim.ai.providers.router import Router  # noqa: E402
 from skim.storage.memory import MemoryStorage  # noqa: E402
 
@@ -37,7 +38,7 @@ def git_state() -> str:
         return "unknown"
 
 
-async def main() -> int:
+async def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry", action="store_true")
     ap.add_argument("--csv", default=str(ROOT / "tests" / "eval" / "eval_messages.csv"))
@@ -46,8 +47,9 @@ async def main() -> int:
     ap.add_argument("--note", default="", help="what changed since the last run")
     ap.add_argument("--pause", type=float, default=20.0, help="seconds to wait before retrying failed items (rate limits)")
     ap.add_argument("--interval", type=float, default=4.0, help="seconds between calls to one provider (free-tier pacing)")
+    ap.add_argument("--providers", default="groq,gemini", help="ordered, comma list of groq|gemini|nim (nim needs NIM_API_KEY + NIM_MODEL)")
     ap.add_argument("--no-log", action="store_true")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     rows = load_rows(Path(a.csv))
     if a.dry:
@@ -62,8 +64,15 @@ async def main() -> int:
         if not base.enabled:
             print("AI is not configured: set GROQ_API_KEY, GEMINI_API_KEY and GROQ_MODEL (see the log line above).", file=sys.stderr)
             return 2
-        router = Router([GroqProvider(base.groq_api_key, base.groq_model), GeminiProvider(base.gemini_api_key, base.gemini_model)],
-                        min_interval=a.interval, max_retry_after=70.0, rate_retries=3)
+        makers = {"groq": lambda: GroqProvider(base.groq_api_key, base.groq_model),
+                  "gemini": lambda: GeminiProvider(base.gemini_api_key, base.gemini_model),
+                  "nim": lambda: NimProvider(base.nim_api_key, base.nim_model)}
+        names = [n.strip() for n in a.providers.split(",") if n.strip()]
+        bad = [n for n in names if n not in makers]
+        if bad or not names or ("nim" in names and not (base.nim_api_key and base.nim_model)):
+            print(f"bad --providers {a.providers!r}: use groq|gemini|nim; nim needs NIM_API_KEY and NIM_MODEL", file=sys.stderr)
+            return 2
+        router = Router([makers[n]() for n in names], min_interval=a.interval, max_retry_after=70.0, rate_retries=3)
     from dataclasses import replace
     cfg = eval_config(replace(base, prompt_version=a.prompt_version or base.prompt_version, max_attempts=8))
     store = MemoryStorage()
@@ -78,7 +87,7 @@ async def main() -> int:
     rep = score(rows, obs)
     await router.close()
 
-    models = ("recorded perfect model (--dry)" if a.dry else f"groq={cfg.groq_model}, gemini fallback={cfg.gemini_model}")
+    models = ("recorded perfect model (--dry)" if a.dry else ", ".join(f"{p.name}={p.model}" for p in router.providers))
     stats = {k: v for k, v in sorted(router.stats.items())}
     head = (f"\n\n## Eval run {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC{' (DRY, code-only)' if a.dry else ''}\n"
             f"- git: {git_state()}\n- providers/models: {models}\n- prompt version: {cfg.prompt_version}\n"

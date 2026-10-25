@@ -16,6 +16,7 @@ URL = "https://api.groq.com/openai/v1/chat/completions"
 
 class GroqProvider:
     name = "groq"
+    _reject_words = ("schema",)  # a 400 mentioning one of these means "structured output not supported"
 
     def __init__(self, api_key: str, model: str, timeout: float = 45.0, url: str = URL,
                  session: aiohttp.ClientSession | None = None):
@@ -53,9 +54,9 @@ class GroqProvider:
                         headers={"Authorization": f"Bearer {self._key}"},
                         timeout=aiohttp.ClientTimeout(total=self._timeout)) as r:
                     data = await r.json(content_type=None)
-                    if r.status == 400 and self._schema_mode and attempt == 1 and "schema" in json.dumps(data).lower():
+                    if r.status == 400 and self._schema_mode and attempt == 1 and any(w in json.dumps(data).lower() for w in self._reject_words):
                         self._schema_mode = False  # e.g. "does not support response format json_schema"
-                        log.warning(json.dumps({"event": "ai_schema_mode_off", "provider": "groq", "model": self.model,
+                        log.warning(json.dumps({"event": "ai_schema_mode_off", "provider": self.name, "model": self.model,
                                                 "error_code": str((data.get("error") or {}).get("code") or (data.get("error") or {}).get("type") or "")[:60]}))
                         continue
                     if r.status >= 400:

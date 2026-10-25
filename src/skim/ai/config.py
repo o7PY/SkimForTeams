@@ -23,6 +23,8 @@ class AIConfig:
     groq_api_key: str | None = field(default=None, repr=False)
     gemini_api_key: str | None = field(default=None, repr=False)
     groq_model: str = ""
+    nim_api_key: str | None = field(default=None, repr=False)
+    nim_model: str = ""   # optional third provider (NVIDIA NIM); used only when both NIM_API_KEY and NIM_MODEL are set
     gemini_model: str = "gemini-2.5-flash-lite"
     embed_model: str = "gemini-embedding-001"
     embed_dims: int = 768
@@ -59,7 +61,7 @@ class AIConfig:
             return cls()
         return cls(
             enabled=True, groq_api_key=env["GROQ_API_KEY"], gemini_api_key=env["GEMINI_API_KEY"],
-            groq_model=env["GROQ_MODEL"], gemini_model=env.get("GEMINI_MODEL") or cls.gemini_model,
+            groq_model=env["GROQ_MODEL"], nim_api_key=env.get("NIM_API_KEY") or None, nim_model=env.get("NIM_MODEL") or "", gemini_model=env.get("GEMINI_MODEL") or cls.gemini_model,
             embed_model=env.get("EMBED_MODEL") or cls.embed_model, embed_dims=num("EMBED_DIMS", 768),
             prompt_version=env.get("PROMPT_VERSION") or cls.prompt_version,
             max_messages_per_run=num("AI_MAX_MESSAGES_PER_RUN", 200), max_docs_per_run=num("AI_MAX_DOCS_PER_RUN", 10),

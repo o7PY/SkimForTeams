@@ -20,7 +20,7 @@ class ProviderReply:
 
 
 class LLMProvider(Protocol):
-    name: str   # groq | gemini
+    name: str   # groq | gemini | nim
     model: str
 
     async def complete_json(self, system: str, user: str, schema: dict,
