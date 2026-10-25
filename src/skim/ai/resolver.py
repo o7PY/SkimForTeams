@@ -35,6 +35,24 @@ def identifiers(words: frozenset[str], nums: frozenset[str]) -> frozenset[str]:
     return frozenset((words - _TYPE_WORDS) | nums)
 
 
+# P3-DIFF-020: only EXPLICIT change language may move an event. A reminder / restatement / venue / details item never
+# overwrites a date or time; it may only fill in one that is missing, and a conflict is flagged instead of applied.
+MOVING_ACTIONS = frozenset({"reschedule"})
+_WEEKDAYS = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
+
+def may_move(action: str) -> bool:
+    return action in MOVING_ACTIONS
+
+
+def weekday_agrees(when, event_date: date | None) -> bool:
+    """A bare weekday ("Reminder: the quiz is on Monday") that names the weekday the event already falls on is the SAME day,
+    even when the next such weekday from the posted date is earlier (posted Sunday/Monday, event the Monday after)."""
+    rel = getattr(when, "relative", None)
+    return bool(event_date and getattr(when, "kind", None) == "relative" and rel is not None and rel.anchor == "weekday"
+                and rel.weekday and _WEEKDAYS[rel.weekday] == event_date.weekday())
+
+
 @dataclass
 class Match:
     event: dict | None          # None = new event

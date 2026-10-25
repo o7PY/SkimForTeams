@@ -8,7 +8,7 @@ def test_eval_set_is_valid():
 
 def test_eval_set_shape():
     rows = v.load()
-    assert len({r["msg_id"] for r in rows}) == 50
+    assert len({r["msg_id"] for r in rows}) == 54
     assert {r["author"] for r in rows} == {"prof", "student"}
 
 

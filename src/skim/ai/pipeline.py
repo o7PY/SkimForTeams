@@ -17,7 +17,7 @@ from .config import AIConfig
 from .prompts import load
 from .providers.router import AllProvidersFailed, Router
 from .redact import Redactor
-from .resolver import Match, find_match
+from .resolver import Match, find_match, may_move, weekday_agrees
 from .schemas import Item, MessageExtraction, ResolveChoice
 from .timeparse import IST, Resolved, cap, inherit_time, resolve_when, wants_same_place
 
@@ -235,7 +235,7 @@ class Pipeline:
                         ops.append(self._flag_generic(g, title))
                 continue
             claimed.add(target["id"])
-            op = self._update_event(target, item, title, venue, details, res, conf, review, msg)
+            op = self._update_event(target, item, title, venue, details, res, conf, review, msg, own_edit=target["id"] in prior_created)
             if op["relation"] == "restated":
                 out.restated += 1
             else:
@@ -288,10 +288,11 @@ class Pipeline:
                              "confidence": conf}]}
 
     # ---------------------------------------------------------------- existing event
-    def _update_event(self, old: dict, item: Item, title, venue, details, res: Resolved, conf, review, msg) -> dict:
+    def _update_event(self, old: dict, item: Item, title, venue, details, res: Resolved, conf, review, msg, own_edit: bool = False) -> dict:
         was = _snapshot(old)
         fields: dict[str, Any] = {}
         changes: list[dict] = []
+        conflicts: list[str] = []
 
         def change(kind: str, before: dict, after: dict) -> None:
             changes.append({"change_type": kind, "old_values": before, "new_values": after, "confidence": conf})
@@ -302,6 +303,7 @@ class Pipeline:
                 change("cancelled", {"status": old["status"]}, {"status": "cancelled"})
         else:
             rescheduled = False
+            moves = may_move(item.action) or own_edit  # an edit of the message that CREATED the event supersedes it
             if res.event_date is not None:
                 new_t = res.time
                 old_has_time = bool(old.get("time_known"))
@@ -317,11 +319,28 @@ class Pipeline:
                     kind = "rescheduled"
                 elif res.time_known and not old_has_time:
                     kind = "time_set"
+                if kind == "rescheduled" and not moves:
+                    # A reminder / restatement may not move the event. Same weekday = the same day, only a time can differ.
+                    same_day = res.event_date == old["event_date"] or weekday_agrees(item.when, old["event_date"])
+                    kind = None
+                    if not same_day:
+                        conflicts.append("date")
+                    elif res.time_known and not old_has_time:
+                        kind, after = "time_set", {"date": old["event_date"].isoformat(), "time": new_t.strftime("%H:%M")}
+                    elif res.time_known and old_t != new_t:
+                        conflicts.append("time")
                 if kind:
                     rescheduled = kind == "rescheduled"
                     change(kind, before, after)
-                    fields.update(event_date=res.event_date, starts_at=res.starts_at, ends_at=res.ends_at,
-                                  time_known=res.time_known, time_defaulted=res.time_defaulted)
+                    if kind == "time_set" and res.event_date != old.get("event_date") and old.get("event_date"):
+                        # the stated time belongs to the event's own date (the reminder's weekday resolved to another day)
+                        fields.update(starts_at=datetime.combine(old["event_date"], new_t, tzinfo=IST).astimezone(timezone.utc),
+                                      ends_at=(datetime.combine(old["event_date"], res.end_time, tzinfo=IST).astimezone(timezone.utc)
+                                               if res.end_time else None),
+                                      time_known=True, time_defaulted=False)
+                    else:
+                        fields.update(event_date=res.event_date, starts_at=res.starts_at, ends_at=res.ends_at,
+                                      time_known=res.time_known, time_defaulted=res.time_defaulted)
             if venue and not wants_same_place(msg.get("text") or "") and _norm(venue) != _norm(old.get("venue")):
                 change("venue_changed", {"venue": old.get("venue")}, {"venue": venue})
                 fields["venue"] = venue
@@ -337,9 +356,17 @@ class Pipeline:
                 change("uncancelled", {"status": "cancelled"}, {"status": "scheduled"})
             elif rescheduled:
                 fields["status"] = "rescheduled"
-        if not changes:
+        if conflicts:  # P3-DIFF-020: the message disagrees with the event but is not allowed to change it: flag, never apply
+            fields["needs_review"] = True
+            changes.append({"change_type": "needs_review", "old_values": {"needs_review": bool(old.get("needs_review"))},
+                            "confidence": "medium",
+                            "new_values": {"needs_review": True, "reason": f"reminder conflicts with the event's {' and '.join(conflicts)}",
+                                           "stated_date": res.event_date.isoformat() if res.event_date else None,
+                                           "stated_time": res.time.strftime("%H:%M") if res.time_known and res.time else None}})
+        if not [c for c in changes if c["change_type"] != "needs_review"]:
             relation = "restated"
-            changes.append({"change_type": "restated", "old_values": None, "new_values": None, "confidence": conf})
+            if not changes:
+                changes.append({"change_type": "restated", "old_values": None, "new_values": None, "confidence": conf})
         else:
             relation = "changed"
             fields["confidence"] = conf

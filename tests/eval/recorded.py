@@ -83,4 +83,8 @@ RECORDED = {
     49: ex("change", it("reschedule", "office_hours", "Office hours (weekly)", W("thu", "next", "16:00", "17:00"))),
     50: ex("change", it("set_date", "presentation", "Final presentations (day 1)", A("2026-11-30", "14:00", "17:00"), venue="LHC 104"),
            it("create", "presentation", "Final presentations (day 2)", A("2026-12-01", "14:00", "17:00"), venue="LHC 104")),
+    51: ex("event", it("create", "quiz", "Quiz 4", A("2026-11-20", "10:00", text="Friday, 20 November, at 10 AM"), venue="LHC 104")),
+    52: ex("change", it("reschedule", "quiz", "Quiz 4", A("2026-11-23", text="Monday, 23 November, same time and place"))),
+    53: ex("event", it("restate", "quiz", "Quiz 4", W("mon", text="on Monday"))),
+    54: ex("event", it("restate", "quiz", "Quiz 4", W("mon", text="on Monday"))),
 }

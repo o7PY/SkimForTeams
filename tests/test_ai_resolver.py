@@ -133,3 +133,87 @@ async def test_reset_then_rerun_rebuilds_the_same_events_without_duplicates():
     assert counts["events"] == 2 and await h.events() == []
     await h.run()
     assert snap(await h.events()) == first                                                   # same events, none doubled
+
+
+# ---- P3-DIFF-020: a reminder must never move an event (live bug, 2026-10-26)
+A = "Quiz 1 will be on Friday, 30 October, at 10 AM in LHC 104."
+B = "Correction: Quiz 1 is moved to Monday, 2 November, same time and place."
+
+
+def _script(extra=None):
+    s = {A: extraction("event", [item("create", "quiz", "Quiz 1", ABS("2026-10-30", "10:00", text="Friday, 30 October, at 10 AM"), venue="LHC 104")]),
+         B: extraction("change", [item("reschedule", "quiz", "Quiz 1", {"kind": "absolute", "date": "2026-11-02", "text": "Monday, 2 November, same time and place"})])}
+    s.update(extra or {})
+    return s
+
+
+def _monday_reminder(text="Reminder: Quiz 1 is on Monday", action="restate"):
+    return {text: extraction("event", [item(action, "quiz", "Quiz 1", WD("mon", text="on Monday"))])}
+
+
+async def _quiz1(h):
+    (e,) = await h.events()
+    return e
+
+
+async def test_reminder_with_the_events_weekday_is_a_restate_even_when_next_monday_is_earlier():
+    """The live case: the reminder was posted Monday 01:44 IST ('Sun 25 Oct' in UTC), so 'on Monday' resolves to TODAY (26 Oct)."""
+    for posted in ("2026-10-26 01:44", "2026-10-25 10:00"):
+        h = await Harness(_script(_monday_reminder())).setup()
+        await h.post("2026-10-23 09:00", A)
+        await h.post("2026-10-24 09:00", B)
+        await h.post(posted, "Reminder: Quiz 1 is on Monday")
+        await h.run()
+        e = await _quiz1(h)
+        assert (e["event_date"], e["status"], e["venue"], e["time_known"]) == (date(2026, 11, 2), "rescheduled", "LHC 104", True), posted
+        assert e["starts_at"].astimezone(IST).time() == time(10, 0), posted        # the 10 AM survives
+        assert await h.changes(e["id"]) == ["created", "rescheduled", "restated"], posted
+        assert e["needs_review"] is False                                          # same weekday: not even a conflict
+
+
+async def test_a_reminder_that_conflicts_with_the_events_date_changes_nothing_and_is_flagged():
+    h = await Harness(_script(_monday_reminder("Reminder: Quiz 1 is on Tuesday") | {
+        "Reminder: Quiz 1 is on Tuesday": extraction("event", [item("restate", "quiz", "Quiz 1", WD("tue", text="on Tuesday"))])})).setup()
+    await h.post("2026-10-23 09:00", A)
+    await h.post("2026-10-24 09:00", B)
+    await h.post("2026-10-26 10:00", "Reminder: Quiz 1 is on Tuesday")
+    await h.run()
+    e = await _quiz1(h)
+    assert (e["event_date"], e["status"], e["time_known"]) == (date(2026, 11, 2), "rescheduled", True)   # untouched
+    assert e["needs_review"] is True
+    ch = (await h.store.get_event(e["id"]))["changes"]
+    assert [c["change_type"] for c in ch] == ["created", "rescheduled", "needs_review"]
+    assert ch[-1]["new_values"]["reason"] == "reminder conflicts with the event's date" and ch[-1]["new_values"]["stated_date"] == "2026-10-27"
+
+
+async def test_only_explicit_change_actions_reschedule_so_a_mislabelled_item_is_flagged_not_applied():
+    """The resolver decides, not the prompt: create/restate/venue/details never move an event; reschedule does."""
+    for action in ("create", "restate", "venue", "details"):
+        h = await Harness(_script({"moved?": extraction("event", [item(action, "quiz", "Quiz 1", ABS("2026-11-09", "11:00", text="9 Nov 11am"))])})).setup()
+        await h.post("2026-10-23 09:00", A)
+        await h.post("2026-10-24 09:00", "moved?")
+        await h.run()
+        e = await _quiz1(h)
+        assert (e["event_date"], e["status"]) == (date(2026, 10, 30), "scheduled"), action
+        assert e["needs_review"] is True, action
+    h = await Harness(_script({"moved?": extraction("change", [item("reschedule", "quiz", "Quiz 1", ABS("2026-11-09", "11:00", text="9 Nov 11am"))])})).setup()
+    await h.post("2026-10-23 09:00", A)
+    await h.post("2026-10-24 09:00", "moved?")
+    await h.run()
+    assert (await _quiz1(h))["event_date"] == date(2026, 11, 9)
+
+
+async def test_a_reminder_may_fill_in_what_is_missing_but_never_overwrite():
+    h = await Harness({
+        "Quiz 1 next Friday": extraction("event", [item("create", "quiz", "Quiz 1", WD("fri", "next", text="next Friday"))]),
+        "Reminder: Quiz 1 on Friday at 3 PM": extraction("event", [item("restate", "quiz", "Quiz 1", WD("fri", t="15:00", text="Friday at 3 PM"))]),
+        "Reminder: Quiz 1 at 4 PM": extraction("event", [item("restate", "quiz", "Quiz 1", {"kind": "none", "time": "16:00", "text": "at 4 PM"})]),
+    }).setup()
+    await h.post("2026-10-20 09:00", "Quiz 1 next Friday")
+    await h.post("2026-10-21 09:00", "Reminder: Quiz 1 on Friday at 3 PM")
+    await h.post("2026-10-22 09:00", "Reminder: Quiz 1 at 4 PM")
+    await h.run()
+    e = await _quiz1(h)
+    assert e["event_date"] == date(2026, 10, 23) and e["starts_at"].astimezone(IST).time() == time(15, 0)   # time filled once...
+    assert e["needs_review"] is True                                                                          # ...the 4 PM conflict is flagged
+    assert await h.changes(e["id"]) == ["created", "time_set", "needs_review"]
