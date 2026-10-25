@@ -3,7 +3,7 @@ with NIM as the ONLY provider (so every answer in the scorecard is NIM's; no fal
 
     set -a; . ./.env; set +a
     export NIM_API_KEY=nvapi-...   NIM_MODEL=meta/llama-3.3-70b-instruct     # any chat model from build.nvidia.com
-    python scripts/eval_nim.py [--interval 3] [--note "text"] [--smoke-only]
+    python scripts/eval_nim.py [--interval 3] [--note "text"] [--smoke-only | --list-models]
 
 Appends to Bookkeeping/PHASE3_EVAL.md like run_eval.py. Uses synthetic eval text only; the key is never printed.
 """
@@ -41,7 +41,30 @@ async def smoke(key: str, model: str) -> bool:
         await router.close()
 
 
+async def list_models(key: str) -> int:
+    """GET /v1/models: which model ids this key can call right now (ids only; nothing else is printed)."""
+    import aiohttp
+    async with aiohttp.ClientSession() as sess:
+        async with sess.get("https://integrate.api.nvidia.com/v1/models", headers={"Authorization": f"Bearer {key}"},
+                            timeout=aiohttp.ClientTimeout(total=30)) as r:
+            if r.status != 200:
+                print(f"list-models: HTTP {r.status}")
+                return 1
+            ids = sorted(m.get("id", "") for m in (await r.json(content_type=None)).get("data", []))
+    skip = ("embed", "rerank", "vision", "clip", "guard", "safety", "reward", "parse", "nemoretriever", "-vl", "diffusion")
+    chat = [i for i in ids if not any(w in i.lower() for w in skip)]
+    print(f"{len(ids)} models listed; likely chat models ({len(chat)}):")
+    print("\n".join("  " + i for i in chat))
+    return 0
+
+
 async def main() -> int:
+    if "--list-models" in sys.argv:
+        k = os.environ.get("NIM_API_KEY")
+        if not k:
+            print("Set NIM_API_KEY first.", file=sys.stderr)
+            return 2
+        return await list_models(k)
     key, model = os.environ.get("NIM_API_KEY"), os.environ.get("NIM_MODEL")
     if not key or not model:
         print("Set NIM_API_KEY and NIM_MODEL (e.g. meta/llama-3.3-70b-instruct) in the environment.", file=sys.stderr)
