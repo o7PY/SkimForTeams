@@ -60,7 +60,8 @@ class Router:
             except ProviderError as e:
                 last = e.kind
                 log.warning(json.dumps({"event": "ai_provider_failed", "provider": p.name, "model": p.model,
-                                        "error_class": e.kind, "status": e.status}))
+                                        "error_class": e.kind, "status": e.status,
+                                        "retry_after": e.retry_after}))
             self.stats[f"failed_{p.name}"] += 1
         self.stats["all_failed"] += 1
         raise AllProvidersFailed(last)
