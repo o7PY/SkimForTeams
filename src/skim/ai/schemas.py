@@ -63,6 +63,11 @@ class MessageExtraction(_Strict):
 class ResolveChoice(_Strict):
     match: str  # an event id from the list, or "new"
 
+    @field_validator("match", mode="before")
+    @classmethod
+    def _as_text(cls, v):
+        return str(v) if isinstance(v, int) and not isinstance(v, bool) else v
+
 
 def strict_json_schema(model: type[BaseModel]) -> dict:
     """OpenAI/Groq strict-mode friendly schema: $refs inlined, every property required, no extra properties.

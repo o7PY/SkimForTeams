@@ -38,3 +38,29 @@ def item(action="create", type="quiz", title="Quiz 1", when=None, **kw):
     if when:
         base["when"] = {**base["when"], **when}
     return base
+
+
+class ScriptedProvider(FakeProvider):
+    """Answers by the text found inside <message>...</message> (so tests can script a whole conversation)."""
+
+    def __init__(self, script: dict, name="groq", model="scripted"):
+        super().__init__(name, [], model)
+        self.script = script
+
+    async def complete_json(self, system, user, schema, repair=None):
+        import re
+        from skim.ai.providers.base import ProviderReply
+        self.calls.append({"system": system, "user": user, "repair": repair})
+        if "<candidates>" in user:  # tie-break
+            ans = self.script.get("__tiebreak__", "new")
+            return ProviderReply(json.dumps({"match": ans}), 1)
+        text = re.search(r"<message>(.*?)</message>", user, re.S).group(1)
+        reply = self.script[text]
+        if isinstance(reply, ProviderErrorLike):
+            raise reply.error
+        return ProviderReply(json.dumps(reply), 10)
+
+
+class ProviderErrorLike:
+    def __init__(self, error):
+        self.error = error
