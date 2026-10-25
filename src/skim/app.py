@@ -1,9 +1,12 @@
 """aiohttp application: /api/messages, /health, /debug/*."""
 from __future__ import annotations
 
+import warnings
+
 import logging
 
 from aiohttp import web
+from aiohttp.web_exceptions import NotAppKeyWarning
 from microsoft_agents.authentication.msal import MsalConnectionManager
 from microsoft_agents.hosting.aiohttp import CloudAdapter, jwt_authorization_decorator, start_agent_process
 
@@ -17,6 +20,9 @@ from .ai.services import AIServices
 from .jobs.runner import JobRunner
 from .normalize import is_non_standard_channel
 from .storage.base import Storage
+
+# The SDK's JWT middleware stores request["claims_identity"] with a string key (its code, not ours): same warning, filtered by module.
+warnings.filterwarnings("ignore", category=NotAppKeyWarning, module=r"microsoft_agents\.hosting\.aiohttp\..*")
 
 log = logging.getLogger("skim")
 
@@ -71,7 +77,11 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
         return web.json_response({"ok": True, "db": db, "db_schema": status})
 
     app = web.Application()
-    app["agent_configuration"] = connections.get_default_connection_configuration()
+    # The Microsoft Agents SDK looks this up by the plain STRING key ("agent_configuration"); a web.AppKey would not be found and
+    # would silently disable its JWT check. aiohttp warns about string keys, so only that known assignment is silenced.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", NotAppKeyWarning)
+        app["agent_configuration"] = connections.get_default_connection_configuration()
     app.router.add_post("/api/messages", messages)
     app.router.add_get("/health", health)
     if settings.debug_token:
