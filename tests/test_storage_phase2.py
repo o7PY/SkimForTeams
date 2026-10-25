@@ -165,11 +165,13 @@ async def test_job_lock_concurrent_acquire_has_one_winner(store):
 async def test_job_lock_expired_lease_can_be_taken_over(store):
     import asyncio
 
-    async with store.job_lock("jobs", 0.2) as crashed:  # holder that "crashed" (never releases in time)
+    # Lease times are generous: against a remote database each call takes 100+ ms, so a 0.2 s lease expired before the
+    # "still valid" check ran (flaky on Supabase from a home PC).
+    async with store.job_lock("jobs", 2.0) as crashed:  # holder that "crashed" (never releases in time)
         assert crashed is True
         async with store.job_lock("jobs", 30) as early:
             assert early is False  # lease still valid
-        await asyncio.sleep(0.4)
+        await asyncio.sleep(2.2)
         async with store.job_lock("jobs", 30) as taken:
             assert taken is True  # expired: taken over
             # the stale holder finishing now must not release the new holder's lease
@@ -183,12 +185,23 @@ async def test_job_lock_expired_lease_can_be_taken_over(store):
 async def test_stale_holder_release_keeps_new_lease(store):
     import asyncio
 
-    stale = store.job_lock("jobs", 0.1)
+    stale = store.job_lock("jobs", 1.0)
     assert await stale.__aenter__() is True
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(1.3)
     fresh = store.job_lock("jobs", 30)
     assert await fresh.__aenter__() is True
     await stale.__aexit__(None, None, None)  # must not delete fresh's lease
     async with store.job_lock("jobs", 30) as contender:
         assert contender is False
     await fresh.__aexit__(None, None, None)
+
+
+def test_wipe_guard_refuses_a_database_that_is_not_clearly_disposable(monkeypatch):
+    import pytest
+    from conftest import wipe_guard
+    monkeypatch.delenv("SKIM_TEST_DB_MAY_BE_WIPED", raising=False)
+    with pytest.raises(pytest.UsageError):
+        wipe_guard("postgresql://u:p@db.example.supabase.co:5432/postgres")
+    wipe_guard("postgresql://u:p@localhost:5432/skim_test")
+    monkeypatch.setenv("SKIM_TEST_DB_MAY_BE_WIPED", "yes")
+    wipe_guard("postgresql://u:p@db.example.supabase.co:5432/postgres")

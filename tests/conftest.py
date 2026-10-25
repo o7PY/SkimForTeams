@@ -15,12 +15,25 @@ def load_fixture():
     return load
 
 
+def wipe_guard(dsn: str) -> None:
+    """The Postgres tests run `drop schema public cascade`. Refuse unless the database is clearly disposable: its name
+    contains 'test', or the human set SKIM_TEST_DB_MAY_BE_WIPED=yes for this run. Never point this at production."""
+    import os
+    from urllib.parse import urlsplit
+    name = urlsplit(dsn).path.strip("/").lower()
+    if "test" not in name and os.environ.get("SKIM_TEST_DB_MAY_BE_WIPED") != "yes":
+        raise pytest.UsageError(
+            f"TEST_DATABASE_URL points at database {name!r}: these tests DROP the whole public schema. Use a throwaway "
+            "database whose name contains 'test', or set SKIM_TEST_DB_MAY_BE_WIPED=yes if you are certain it is disposable.")
+
+
 async def _pg_store():
     """A PostgresStorage on a freshly migrated disposable database (TEST_DATABASE_URL), else skip."""
     import os
     dsn = os.environ.get("TEST_DATABASE_URL")
     if not dsn:
         pytest.skip("TEST_DATABASE_URL not set")
+    wipe_guard(dsn)
     import asyncpg
     from migrate import MIGRATIONS
     from skim.storage.postgres import PostgresStorage

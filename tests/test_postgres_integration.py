@@ -15,7 +15,9 @@ async def test_full_sequence_against_postgres(load):
     from skim.config import Settings
     from skim.storage.postgres import PostgresStorage
 
+    from conftest import wipe_guard
     dsn = os.environ["TEST_DATABASE_URL"]
+    wipe_guard(dsn)
     conn = await asyncpg.connect(dsn, statement_cache_size=0)
     await conn.execute("drop schema public cascade; create schema public;")
     await conn.execute((MIGRATIONS / "001_init.sql").read_text())
