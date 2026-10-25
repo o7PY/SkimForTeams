@@ -247,7 +247,8 @@ async def test_job_records_skips_keeps_transient_failures_pending_and_ignores_ot
     await ai_documents(ctx, None, fetch=fetch)
     by = {(await store.get_document("d", n))["id"]: n for n in ("big.pdf", "scan.pdf", "flaky.docx")}
     got = {by[i]: (t["status"], t["reason"]) for i, t in store.document_texts.items()}
-    assert got == {"big.pdf": ("skipped", "too_large"), "scan.pdf": ("skipped", "no_text")}
+    assert got == {"big.pdf": ("skipped", "too_large"), "scan.pdf": ("skipped", "no_text"),
+                   "flaky.docx": ("error", "TransientFetchError")}  # a failed fetch counts one attempt
     assert ctx.stats["ai_doc_fetch_transient"] == 1 and prov.calls == []  # nothing sent to an LLM
     assert [d["name"] for d in await store.list_pending_documents(10)] == ["flaky.docx"]
 

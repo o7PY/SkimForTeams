@@ -6,21 +6,17 @@ from .ai_memory import EVENT_FIELDS
 _EVENT_COLS = ("team_id", "type", "title", "is_deadline", "starts_at", "ends_at", "event_date", "time_known",
                "time_defaulted", "venue", "details", "status", "confidence", "needs_review")
 
-_PENDING_DOCS_SQL = """
-select d.*, t.installed_by_aad
+_PENDING_DOCS_BODY = """
 from documents d
 join teams t on t.id = d.team_id and t.removed_at is null
 left join document_texts x on x.document_id = d.id
 where d.deleted_at is null and not d.is_folder
   and lower(substring(d.name from '[^.]*$')) in ('pdf', 'docx', 'pptx')
-  and (x.document_id is null or x.ctag is distinct from d.ctag)
-order by d.modified_at asc nulls last, d.id asc
-limit $1"""
+  and (x.document_id is null or x.ctag is distinct from d.ctag or (x.status = 'error' and x.attempts < $1))"""
+_PENDING_DOCS_SQL = ("select d.*, t.installed_by_aad" + _PENDING_DOCS_BODY
+                     + "\norder by d.modified_at asc nulls last, d.id asc\nlimit $2")
 
-_PENDING_SQL = """
-select m.conversation_id, m.message_id, m.current_version as version, m.text, m.subject, m.created_at,
-       m.last_edited_at, m.from_aad_id, m.from_name, m.reply_to_id, m.mentions, c.team_id, t.installed_by_aad,
-       p.text as parent_text, p.from_name as parent_from_name
+_PENDING_BODY = """
 from messages m
 join conversations c on c.id = m.conversation_id and c.team_id is not null and c.conversation_type = 'channel'
 join teams t on t.id = c.team_id and t.removed_at is null
@@ -32,9 +28,11 @@ left join message_analysis a on a.conversation_id = m.conversation_id and a.mess
 where m.deleted_at is null
   and coalesce(ch.membership_type, 'standard') = 'standard'
   and (coalesce(m.text, '') <> '' or coalesce(m.subject, '') <> '')
-  and (a.message_id is null or (a.status = 'failed' and a.attempts < $2))
-order by coalesce(m.created_at, m.last_edited_at) asc, m.message_id asc
-limit $3"""
+  and (a.message_id is null or (a.status = 'failed' and a.attempts < $2))"""
+_PENDING_SQL = ("""select m.conversation_id, m.message_id, m.current_version as version, m.text, m.subject, m.created_at,
+       m.last_edited_at, m.from_aad_id, m.from_name, m.reply_to_id, m.mentions, c.team_id, t.installed_by_aad,
+       p.text as parent_text, p.from_name as parent_from_name""" + _PENDING_BODY
+                + "\norder by coalesce(m.created_at, m.last_edited_at) asc, m.message_id asc\nlimit $3")
 
 
 class PostgresAIMixin:
@@ -149,21 +147,53 @@ class PostgresAIMixin:
                                  where l.event_id = e.id and m2.deleted_at is null)""")
         return int(res.split()[-1])
 
-    async def ai_status(self, prompt_version: str, max_attempts: int) -> dict:
+    async def ai_status(self, prompt_version: str, max_attempts: int, embed_model: str | None = None) -> dict:
         assert self.pool
-        by_status = {r["status"]: r["n"] for r in await self.pool.fetch(
+        p = self.pool
+        by_status = {r["status"]: r["n"] for r in await p.fetch(
             "select status, count(*)::int n from message_analysis group by 1")}
-        failures = {(r["error_class"] or "unknown"): r["n"] for r in await self.pool.fetch(
-            "select error_class, count(*)::int n from message_analysis where status='failed' group by 1")}
-        pending = len(await self.list_pending_messages(prompt_version, max_attempts, 10**6))
-        ev = await self.pool.fetchrow("select count(*)::int n, count(*) filter (where needs_review)::int r from events")
-        return {"analyses_by_status": by_status, "failures_by_error_class": failures, "messages_pending": pending,
-                "events": ev["n"], "events_needing_review": ev["r"]}
+        failures = {(r["error_class"] or "unknown"): r["n"] for r in await p.fetch(
+            "select error_class, count(*)::int n from message_analysis where status='failed' and prompt_version=$1 group by 1",
+            prompt_version)}
+        msgs_pending = await p.fetchval("select count(*)::int " + _PENDING_BODY, prompt_version, max_attempts)
+        gave_up_msgs = await p.fetchval(
+            "select count(*)::int from message_analysis a join messages m on m.conversation_id=a.conversation_id "
+            "and m.message_id=a.message_id and m.current_version=a.message_version "
+            "where a.status='failed' and a.prompt_version=$1 and a.attempts >= $2 and m.deleted_at is null", prompt_version, max_attempts)
+        docs_pending = await p.fetchval("select count(*)::int " + _PENDING_DOCS_BODY, max_attempts)
+        doc_fail = {(r["reason"] or "unknown"): r["n"] for r in await p.fetch(
+            "select reason, count(*)::int n from document_texts where status in ('error', 'failed') group by 1")}
+        doc_gave_up = await p.fetchval("select count(*)::int from document_texts where status='error' and attempts >= $1", max_attempts)
+        emb_pending = await self._count_unembedded(embed_model, max_attempts) if embed_model else None
+        emb_fail = {(r["error_class"] or "unknown"): r["n"] for r in await p.fetch(
+            "select error_class, count(*)::int n from embed_failures group by 1")}
+        emb_gave_up = await p.fetchval("select count(*)::int from embed_failures where attempts >= $1", max_attempts)
+        ev = await p.fetchrow("select count(*)::int n, count(*) filter (where needs_review)::int r from events")
+        return {"analyses_by_status": by_status, "failures_by_error_class": failures, "messages_pending": msgs_pending,
+                "events": ev["n"], "events_needing_review": ev["r"],
+                "pending": {"messages": msgs_pending, "documents": docs_pending, "embeddings": emb_pending},
+                "gave_up": {"messages": gave_up_msgs, "documents": doc_gave_up, "embeddings": emb_gave_up},
+                "failed_by_error_class": {"messages": failures, "documents": doc_fail, "embeddings": emb_fail}}
+
+    async def _count_unembedded(self, model: str, max_attempts: int) -> int:
+        a = await self.pool.fetchval("select count(*)::int " + _UNEMBEDDED_MESSAGES_BODY, model, max_attempts)
+        b = await self.pool.fetchval("select count(*)::int " + _UNEMBEDDED_CHUNKS_BODY, model, max_attempts)
+        return a + b
 
     # ---- documents (FR-306)
-    async def list_pending_documents(self, limit: int) -> list[dict]:
+    async def list_pending_documents(self, limit: int, max_attempts: int = 3) -> list[dict]:
         assert self.pool
-        return [dict(r) for r in await self.pool.fetch(_PENDING_DOCS_SQL, limit)]
+        return [dict(r) for r in await self.pool.fetch(_PENDING_DOCS_SQL, max_attempts, limit)]
+
+    async def record_document_error(self, document_id: int, ctag, error_class: str) -> int:
+        """An unexpected failure while processing a file counts one attempt (a changed ctag starts again at 1)."""
+        assert self.pool
+        return await self.pool.fetchval(
+            """insert into document_texts (document_id, ctag, status, reason, attempts) values ($1,$2,'error',$3,1)
+               on conflict (document_id) do update set
+                 attempts = case when document_texts.ctag is not distinct from excluded.ctag then document_texts.attempts + 1 else 1 end,
+                 ctag = excluded.ctag, status = 'error', reason = excluded.reason, extracted_at = now()
+               returning attempts""", document_id, ctag, error_class[:80])
 
     async def save_document_text(self, document_id: int, ctag, status: str, reason, page_count, char_count,
                                  chunks: list[dict]) -> None:
@@ -173,11 +203,11 @@ class PostgresAIMixin:
             await conn.execute("delete from embeddings where kind='doc_chunk' and ref->>'document_id' = $1", str(document_id))
             await conn.execute("delete from doc_chunks where document_id=$1", document_id)
             await conn.execute(
-                """insert into document_texts (document_id, ctag, status, reason, page_count, char_count)
-                   values ($1,$2,$3,$4,$5,$6)
+                """insert into document_texts (document_id, ctag, status, reason, page_count, char_count, attempts)
+                   values ($1,$2,$3,$4,$5,$6,0)
                    on conflict (document_id) do update set ctag=excluded.ctag, status=excluded.status,
                      reason=excluded.reason, page_count=excluded.page_count, char_count=excluded.char_count,
-                     extracted_at=now()""", document_id, ctag, status, reason, page_count, char_count)
+                     attempts=0, extracted_at=now()""", document_id, ctag, status, reason, page_count, char_count)
             if chunks:
                 await conn.executemany(
                     "insert into doc_chunks (document_id, ctag, chunk_index, page_from, page_to, text) values ($1,$2,$3,$4,$5,$6)",
@@ -189,14 +219,24 @@ class PostgresAIMixin:
             "select * from doc_chunks where document_id=$1 order by chunk_index", document_id)]
 
     # ---- embeddings (FR-307)
-    async def list_unembedded(self, model: str, limit: int) -> list[dict]:
+    async def list_unembedded(self, model: str, limit: int, max_attempts: int = 3) -> list[dict]:
         assert self.pool
-        msgs = await self.pool.fetch(_UNEMBEDDED_MESSAGES_SQL, model, limit)
+        msgs = await self.pool.fetch(_UNEMBEDDED_MESSAGES_SQL, model, max_attempts, limit)
         out = [{**dict(r), "item": "message"} for r in msgs]
         if len(out) < limit:
-            chunks = await self.pool.fetch(_UNEMBEDDED_CHUNKS_SQL, model, limit - len(out))
+            chunks = await self.pool.fetch(_UNEMBEDDED_CHUNKS_SQL, model, max_attempts, limit - len(out))
             out += [{**dict(r), "item": "doc_chunk"} for r in chunks]
         return out
+
+    async def record_embed_failures(self, rows: list[dict]) -> None:
+        """rows: {ref_key (without model), model, error_class}. One attempt each; the item is skipped after AI_MAX_ATTEMPTS."""
+        assert self.pool
+        for r in rows:
+            await self.pool.execute(
+                """insert into embed_failures (ref_key, model, attempts, error_class) values ($1,$2,1,$3)
+                   on conflict (ref_key) do update set attempts = embed_failures.attempts + 1,
+                     error_class = excluded.error_class, updated_at = now()""",
+                f"{r['ref_key']}:{r['model']}", r["model"], r["error_class"][:80])
 
     async def save_embeddings(self, rows: list[dict]) -> int:
         assert self.pool
@@ -225,8 +265,7 @@ def _vec(v: list[float]) -> str:
     return "[" + ",".join(f"{x:.7g}" for x in v) + "]"
 
 
-_UNEMBEDDED_MESSAGES_SQL = """
-select m.conversation_id, m.message_id, m.current_version as version, m.text, m.subject, m.from_name, m.mentions, c.team_id
+_UNEMBEDDED_MESSAGES_BODY = """
 from messages m
 join conversations c on c.id = m.conversation_id and c.team_id is not null and c.conversation_type = 'channel'
 join teams t on t.id = c.team_id and t.removed_at is null
@@ -235,18 +274,21 @@ where m.deleted_at is null and coalesce(ch.membership_type, 'standard') = 'stand
   and (coalesce(m.text, '') <> '' or coalesce(m.subject, '') <> '')
   and not exists (select 1 from embeddings e where e.ref_key =
         'msg:' || m.conversation_id || ':' || m.message_id || ':v' || m.current_version || ':' || $1)
-order by coalesce(m.created_at, m.last_edited_at) asc, m.message_id asc
-limit $2"""
+  and not exists (select 1 from embed_failures f where f.attempts >= $2 and f.ref_key =
+        'msg:' || m.conversation_id || ':' || m.message_id || ':v' || m.current_version || ':' || $1)"""
+_UNEMBEDDED_MESSAGES_SQL = ("select m.conversation_id, m.message_id, m.current_version as version, m.text, m.subject, m.from_name, "
+                            "m.mentions, c.team_id" + _UNEMBEDDED_MESSAGES_BODY
+                            + "\norder by coalesce(m.created_at, m.last_edited_at) asc, m.message_id asc\nlimit $3")
 
-_UNEMBEDDED_CHUNKS_SQL = """
-select k.id, k.document_id, k.chunk_index, k.text, d.team_id, d.created_by_name, d.modified_by_name
+_UNEMBEDDED_CHUNKS_BODY = """
 from doc_chunks k
 join documents d on d.id = k.document_id and d.deleted_at is null
 join teams t on t.id = d.team_id and t.removed_at is null
 join document_texts x on x.document_id = d.id and x.status = 'ok' and x.ctag is not distinct from k.ctag
 where not exists (select 1 from embeddings e where e.ref_key = 'chunk:' || k.id || ':' || $1)
-order by k.id asc
-limit $2"""
+  and not exists (select 1 from embed_failures f where f.attempts >= $2 and f.ref_key = 'chunk:' || k.id || ':' || $1)"""
+_UNEMBEDDED_CHUNKS_SQL = ("select k.id, k.document_id, k.chunk_index, k.text, d.team_id, d.created_by_name, d.modified_by_name"
+                          + _UNEMBEDDED_CHUNKS_BODY + "\norder by k.id asc\nlimit $3")
 
 # Only CURRENT versions of live messages and chunks of live documents of active teams; optional team filter.
 _SEARCH_SQL = """

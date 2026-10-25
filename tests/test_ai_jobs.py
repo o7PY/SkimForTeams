@@ -146,7 +146,7 @@ async def test_a_pipeline_bug_on_one_message_is_counted_and_stops_after_max_atte
         for _ in range(4):
             body = await (await client.post("/jobs/ai-process", headers=AUTH)).json()
         (a,) = await store.list_message_analyses(CHAN, "q1")
-        assert a["status"] == "failed" and a["error_class"] == "pipeline_error" and a["attempts"] == 3
+        assert a["status"] == "failed" and a["error_class"] == "pipeline:RuntimeError" and a["attempts"] == 3
         assert "SECRET" not in str(body)
     finally:
         await close()

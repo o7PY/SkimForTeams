@@ -180,8 +180,10 @@ async def step_ai_reprocess(ctx: JobContext, team_id: str | None) -> str:
 
 
 async def step_ai_all(ctx: JobContext, team_id: str | None) -> str:
-    """Phase 3 inside run-all (P3-D-017/018). Nothing at all happens when AI is off. An AI failure never
-    undoes or hides the Phase 2 steps that already ran."""
+    """Phase 3 inside run-all (P3-D-017/018). Nothing at all happens when AI is off. An AI failure never undoes or hides the
+    Phase 2 steps that already ran, and a crashing AI step never makes run-all "partial" (P3-DIFF-015): `next` is true only
+    when a step stopped with work it has not tried yet (time budget or per-run limit); failures are counted in the stats and
+    in /debug/ai-status instead, and failing items stop being retried after AI_MAX_ATTEMPTS."""
     if ctx.ai is None:
         return "ok"
     results = []
@@ -192,7 +194,6 @@ async def step_ai_all(ctx: JobContext, team_id: str | None) -> str:
             log.exception("ai step failed")
             ctx.stats["ai_step_errors"] += 1
             ctx.stats[f"ai_step_error_{type(e).__name__}"] += 1
-            results.append("partial")
     return "partial" if "partial" in results else "ok"
 
 

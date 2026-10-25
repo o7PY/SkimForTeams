@@ -33,6 +33,7 @@ class MemoryAIMixin:
         self._event_seq = 0
         self.document_texts: dict[int, dict] = {}
         self.embeddings: dict[int, dict] = {}
+        self.embed_failures: dict[str, dict] = {}
         self.doc_chunks: dict[int, list[dict]] = {}
 
     async def list_pending_messages(self, prompt_version: str, max_attempts: int, limit: int) -> list[dict]:
@@ -145,19 +146,35 @@ class MemoryAIMixin:
                 n += 1
         return n
 
-    async def ai_status(self, prompt_version: str, max_attempts: int) -> dict:
+    async def ai_status(self, prompt_version: str, max_attempts: int, embed_model: str | None = None) -> dict:
         by_status: dict[str, int] = {}
         failures: dict[str, int] = {}
+        gave_up_msgs = 0
         for a in self.analyses.values():
             by_status[a["status"]] = by_status.get(a["status"], 0) + 1
-            if a["status"] == "failed":
+            if a["status"] == "failed" and a["prompt_version"] == prompt_version:
                 failures[a["error_class"] or "unknown"] = failures.get(a["error_class"] or "unknown", 0) + 1
-        pending = len(await self.list_pending_messages(prompt_version, max_attempts, 10**6))
-        return {"analyses_by_status": by_status, "failures_by_error_class": failures, "messages_pending": pending,
-                "events": len(self.events), "events_needing_review": sum(1 for e in self.events.values() if e["needs_review"])}
+                gave_up_msgs += a["attempts"] >= max_attempts
+        msgs = len(await self.list_pending_messages(prompt_version, max_attempts, 10**6))
+        docs = len(await self.list_pending_documents(10**6, max_attempts))
+        doc_fail: dict[str, int] = {}
+        for t in self.document_texts.values():
+            if t["status"] in ("error", "failed"):
+                doc_fail[t["reason"] or "unknown"] = doc_fail.get(t["reason"] or "unknown", 0) + 1
+        emb_fail: dict[str, int] = {}
+        for f in self.embed_failures.values():
+            emb_fail[f["error_class"] or "unknown"] = emb_fail.get(f["error_class"] or "unknown", 0) + 1
+        embs = len(await self.list_unembedded(embed_model, 10**6, max_attempts)) if embed_model else None
+        return {"analyses_by_status": by_status, "failures_by_error_class": failures, "messages_pending": msgs,
+                "events": len(self.events), "events_needing_review": sum(1 for e in self.events.values() if e["needs_review"]),
+                "pending": {"messages": msgs, "documents": docs, "embeddings": embs},
+                "gave_up": {"messages": gave_up_msgs,
+                            "documents": sum(1 for t in self.document_texts.values() if t["status"] == "error" and t["attempts"] >= max_attempts),
+                            "embeddings": sum(1 for f in self.embed_failures.values() if f["attempts"] >= max_attempts)},
+                "failed_by_error_class": {"messages": failures, "documents": doc_fail, "embeddings": emb_fail}}
 
     # ---- documents (FR-306)
-    async def list_pending_documents(self, limit: int) -> list[dict]:
+    async def list_pending_documents(self, limit: int, max_attempts: int = 3) -> list[dict]:
         """Live pdf/docx/pptx files of non-removed teams whose ctag has no document_texts row yet (oldest first)."""
         out = []
         for d in self.documents.values():
@@ -166,7 +183,7 @@ class MemoryAIMixin:
                     or (d.get("name") or "").rsplit(".", 1)[-1].lower() not in ("pdf", "docx", "pptx")):
                 continue
             t = self.document_texts.get(d["id"])
-            if t and t["ctag"] == d["ctag"]:
+            if t and t["ctag"] == d["ctag"] and not (t["status"] == "error" and t["attempts"] < max_attempts):
                 continue
             out.append(dict(d, installed_by_aad=team.get("installed_by_aad")))
         out.sort(key=lambda r: (r["modified_at"] is None, r["modified_at"] or _MIN, r["id"]))
@@ -177,7 +194,7 @@ class MemoryAIMixin:
         """Replace the document's text rows (older ctags' chunks go away)."""
         _reject_nul([reason, chunks])
         self.document_texts[document_id] = {"document_id": document_id, "ctag": ctag, "status": status, "reason": reason,
-                                            "page_count": page_count, "char_count": char_count,
+                                            "page_count": page_count, "char_count": char_count, "attempts": 0,
                                             "extracted_at": datetime.now(timezone.utc)}
         self._chunk_seq = getattr(self, "_chunk_seq", 0)
         self.embeddings = {i: e for i, e in self.embeddings.items()
@@ -188,13 +205,22 @@ class MemoryAIMixin:
             new.append({"id": self._chunk_seq, "document_id": document_id, "ctag": ctag, **c})
         self.doc_chunks[document_id] = new
 
+    async def record_document_error(self, document_id: int, ctag, error_class: str) -> int:
+        prev = self.document_texts.get(document_id)
+        attempts = prev["attempts"] + 1 if prev and prev["ctag"] == ctag and prev["status"] == "error" else 1
+        self.document_texts[document_id] = {"document_id": document_id, "ctag": ctag, "status": "error", "reason": error_class[:80],
+                                            "page_count": None, "char_count": None, "attempts": attempts,
+                                            "extracted_at": datetime.now(timezone.utc)}
+        return attempts
+
     async def list_doc_chunks(self, document_id: int) -> list[dict]:
         return [dict(c) for c in self.doc_chunks.get(document_id, [])]
 
     # ---- embeddings (FR-307)
-    async def list_unembedded(self, model: str, limit: int) -> list[dict]:
+    async def list_unembedded(self, model: str, limit: int, max_attempts: int = 3) -> list[dict]:
         """Current, live messages and current doc chunks without an embedding for `model` (messages first, oldest first)."""
-        have = {e["ref_key"] for e in self.embeddings.values()} if hasattr(self, "embeddings") else set()
+        have = {e["ref_key"] for e in self.embeddings.values()}
+        have |= {k for k, f in self.embed_failures.items() if f["attempts"] >= max_attempts}  # given up on
         out = []
         for m in await self.list_pending_messages("\0none", 10**9, 10**9):  # every live channel message (no analysis filter)
             if f"msg:{m['conversation_id']}:{m['message_id']}:v{m['version']}:{model}" not in have:
@@ -209,6 +235,12 @@ class MemoryAIMixin:
                     out.append({**c, "id": c.get("id", (did, c["chunk_index"])), "item": "doc_chunk", "team_id": d["team_id"],
                                 "created_by_name": d.get("created_by_name"), "modified_by_name": d.get("modified_by_name")})
         return out[:limit]
+
+    async def record_embed_failures(self, rows: list[dict]) -> None:
+        for r in rows:
+            f = self.embed_failures.setdefault(f"{r['ref_key']}:{r['model']}", {"attempts": 0, "error_class": None})
+            f["attempts"] += 1
+            f["error_class"] = r["error_class"][:80]
 
     async def save_embeddings(self, rows: list[dict]) -> int:
         """rows: kind, ref, ref_key (without model), model, dims, embedding, team_id. Idempotent by ref_key+model."""

@@ -129,12 +129,14 @@ def register(app: web.Application, storage: Storage, token: str, ai=None) -> Non
 
     async def ai_status(request: web.Request):
         cfg = ai.cfg if ai else None
-        status = await storage.ai_status(cfg.prompt_version if cfg else "", cfg.max_attempts if cfg else 3)
+        emb = ai.embedder if ai and ai.embedder and ai.embedder.usable else None
+        status = await storage.ai_status(cfg.prompt_version if cfg else "", cfg.max_attempts if cfg else 3,
+                                         emb.model if emb else None)
         runs = [r for r in await storage.latest_job_runs() if str(r.get("job", "")).startswith(("ai-", "run-all"))]
         return _json({"enabled": ai is not None, "prompt_version": cfg.prompt_version if cfg else None,
                       "models": {"groq": cfg.groq_model, "gemini": cfg.gemini_model} if cfg else None,
                       "embeddings": {"model": ai.embedder.model, "stored": await storage.count_embeddings(ai.embedder.model),
-                                     "pending": len(await storage.list_unembedded(ai.embedder.model, 1001))}
+                                     "pending": status["pending"]["embeddings"]}
                       if ai and ai.embedder else None,
                       "last_runs": runs, **status})
 

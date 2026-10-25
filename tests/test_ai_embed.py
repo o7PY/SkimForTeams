@@ -113,7 +113,9 @@ async def test_provider_failure_leaves_items_pending_and_the_run_partial():
     client, store, provider, close = await make(OPEN, extra_providers=[fe])
     try:
         body = await (await client.post("/jobs/ai-embed", headers=AUTH)).json()
-        assert body["status"] == "partial" and body["stats"]["ai_embed_failed"] == 1 and body["stats"]["ai_embed_error_rate_limit"] == 1
+        # an outage is not the items' fault: no attempt burned, next=false (the scheduler's next tick retries)
+        assert body["status"] == "ok" and body["next"] is False and body["stats"]["ai_embed_error_rate_limit"] == 1
+        assert not store.embed_failures and not body["stats"].get("ai_embedded")
         fe.fail = None
         body = await (await client.post("/jobs/ai-embed", headers=AUTH)).json()
         assert body["status"] == "ok" and body["stats"]["ai_embedded"] == 1
