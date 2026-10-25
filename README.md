@@ -111,13 +111,18 @@ Environment (Phase 3 switches itself off with ONE log line if a key or `GROQ_MOD
 | `DOC_MAX_BYTES`, `DOC_MAX_PAGES`, `DOC_MAX_CHARS` | 20 MB / 50 / 150000 | File limits; over a limit the file is skipped with a reason |
 | `COURSE_TIMEZONE` | `Asia/Kolkata` | Used for relative dates and the 23:59 deadline default |
 
-Migration `005_phase3.sql` (needs the pgvector extension) must be applied **before** deploying: `python scripts/migrate.py`.
+Migrations `005_phase3.sql` (needs the pgvector extension) and `006_ai_attempts.sql` must be applied **before** deploying: `python scripts/migrate.py`.
 
 **Jobs** (same token, lock and time budget as Phase 2; all are part of `run-all` when AI is on):
 `POST /jobs/ai-process` (messages → events) · `/jobs/ai-documents` (files → text, chunks, events) · `/jobs/ai-embed`
 (vectors for search) · `/jobs/ai-reprocess?prompt_version=p3-v9` (re-analyse messages under another prompt version; old
 analyses are kept and events are NOT touched; the live version is rejected: bump `PROMPT_VERSION` instead).
 A provider outage or rate limit never fails a run: the work stays pending and is retried.
+
+**To redo a team's AI data after a logic fix** (events wrongly merged, wrong dates...): `ai-reprocess` is NOT enough (it never touches
+events). Instead: `python scripts/reset_ai_data.py --team-id <id>` (dry run), then with `--yes`, then POST `/jobs/run-all` until
+`"next": false`. Only that team's events, history, links, analyses and document-text status are deleted; messages, files and
+embeddings stay.
 
 **To re-process after a prompt change:** edit `src/skim/ai/prompts/*.md`, bump `PROMPT_VERSION` (env), deploy; the next
 `run-all` analyses every message again under the new version. To compare first, run the eval (below).

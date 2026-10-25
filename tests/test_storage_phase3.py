@@ -167,3 +167,30 @@ async def test_nul_and_surrogates_in_any_write_never_break_postgres(pg_store):
         SRC("nul"))
     (e,) = await s.list_events(team_id="T1")
     assert e["title"] == "Quiz 1" and e["venue"] == "LHC"
+
+
+async def test_reset_ai_data_deletes_one_teams_derived_rows_only_and_the_rebuild_gives_the_same_events(store):
+    from skim.ai.config import AIConfig
+    await seed(store)
+    await store.upsert_team({"id": "T2", "aad_group_id": "g2", "name": "Other", "tenant_id": "x"})
+    await store.upsert_conversation({"id": "19:other@thread.tacv2", "conversation_type": "channel", "team_id": "T2",
+                                     "channel_id": "19:other@thread.tacv2", "name": "General"})
+    await store.backfill_message({"conversation_id": "19:other@thread.tacv2", "message_id": "o1", "reply_to_id": None,
+                                  "from_aad_id": "x", "from_name": "X", "text": "hi", "html": None, "importance": None,
+                                  "mentions": None, "subject": None, "created_at": T0, "last_edited_at": None, "deleted_at": None}, [], [])
+    op = {"kind": "create", "event": ev(), "relation": "created",
+          "changes": [{"change_type": "created", "old_values": None, "new_values": {"title": "Quiz 1"}, "confidence": "high"}]}
+    await store.commit_message_analysis(analysis("m0"), [op], SRC("m0"))
+    await store.commit_message_analysis({**analysis("o1"), "conversation_id": "19:other@thread.tacv2"},
+                                        [{**op, "event": ev(team_id="T2", title="Other quiz")}],
+                                        {"kind": "message", "team_id": "T2", "ref": {"conversation_id": "19:other@thread.tacv2", "message_id": "o1"}, "at": T0})
+    dry = await store.reset_ai_data("T1", dry_run=True)
+    assert dry == {"events": 1, "event_changes": 1, "message_event_links": 1, "message_analysis": 1, "document_texts": 0}
+    assert len(await store.list_events(team_id="T1")) == 1  # a dry run changes nothing
+    done = await store.reset_ai_data("T1", dry_run=False)
+    assert done == dry
+    assert await store.list_events(team_id="T1") == []
+    assert [e["title"] for e in await store.list_events(team_id="T2")] == ["Other quiz"]       # the other team is untouched
+    assert len(await store.list_message_analyses(CONV, "m0")) == 0
+    assert {r["message_id"] for r in await store.list_pending_messages(PV, 3, 50)} >= {"m0", "m1", "m2"}  # messages are pending again
+    assert await store.reset_ai_data("T1", dry_run=False) == {k: 0 for k in done}                # idempotent

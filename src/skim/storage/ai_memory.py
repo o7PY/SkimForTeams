@@ -282,3 +282,25 @@ class MemoryAIMixin:
 
     async def count_embeddings(self, model: str) -> int:
         return sum(1 for e in self.embeddings.values() if e["model"] == model)
+
+    # ---- reset (P3-DIFF-018)
+    async def reset_ai_data(self, team_id: str, dry_run: bool = True) -> dict:
+        """Delete everything the AI derived for ONE team (events, their history and links, message analyses, document text
+        status) so the next run-all rebuilds it. Messages, documents, chunks and embeddings are not touched."""
+        eids = {i for i, e in self.events.items() if e["team_id"] == team_id}
+        convs = {c for c, v in self.conversations.items() if v.get("team_id") == team_id}
+        akeys = [k for k in self.analyses if k[0] in convs]
+        dids = [i for i, d in self.documents.items() if d.get("team_id") == team_id and i in self.document_texts]
+        counts = {"events": len(eids), "event_changes": sum(1 for c in self.event_changes if c["event_id"] in eids),
+                  "message_event_links": sum(1 for k in self.message_event_links.values() if k["event_id"] in eids),
+                  "message_analysis": len(akeys), "document_texts": len(dids)}
+        if not dry_run:
+            self.event_changes = [c for c in self.event_changes if c["event_id"] not in eids]
+            self.message_event_links = {k: v for k, v in self.message_event_links.items() if v["event_id"] not in eids}
+            for i in eids:
+                del self.events[i]
+            for k in akeys:
+                del self.analyses[k]
+            for i in dids:
+                del self.document_texts[i]
+        return counts

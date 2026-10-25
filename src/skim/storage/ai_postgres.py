@@ -311,3 +311,25 @@ select * from (
   join teams t on t.id = d.team_id and t.removed_at is null
   where e.kind = 'doc_chunk' and e.model = $2 and ($3::text is null or d.team_id = $3)
 ) s order by score desc limit $4"""
+
+    # ---- reset (P3-DIFF-018)
+    async def reset_ai_data(self, team_id: str, dry_run: bool = True) -> dict:
+        """Delete everything the AI derived for ONE team, in one transaction (see ai_memory.reset_ai_data)."""
+        assert self.pool
+        ev = "select id from events where team_id=$1"
+        async with self.pool.acquire() as conn, conn.transaction():
+            counts = {
+                "events": await conn.fetchval("select count(*)::int from events where team_id=$1", team_id),
+                "event_changes": await conn.fetchval(f"select count(*)::int from event_changes where event_id in ({ev})", team_id),
+                "message_event_links": await conn.fetchval(f"select count(*)::int from message_event_links where event_id in ({ev})", team_id),
+                "message_analysis": await conn.fetchval(
+                    "select count(*)::int from message_analysis a join conversations c on c.id=a.conversation_id where c.team_id=$1", team_id),
+                "document_texts": await conn.fetchval(
+                    "select count(*)::int from document_texts x join documents d on d.id=x.document_id where d.team_id=$1", team_id)}
+            if not dry_run:
+                await conn.execute(f"delete from message_event_links where event_id in ({ev})", team_id)
+                await conn.execute(f"delete from event_changes where event_id in ({ev})", team_id)
+                await conn.execute("delete from events where team_id=$1", team_id)
+                await conn.execute("delete from message_analysis a using conversations c where c.id=a.conversation_id and c.team_id=$1", team_id)
+                await conn.execute("delete from document_texts x using documents d where d.id=x.document_id and d.team_id=$1", team_id)
+        return counts

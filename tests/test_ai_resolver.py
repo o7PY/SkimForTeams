@@ -114,3 +114,22 @@ async def test_reminders_and_the_generic_reference_still_resolve_to_the_right_ev
     assert sorted(e["title"] for e in await h.events()) == ["Quiz 1", "Quiz 2"]               # the reminder merged, no duplicate
     q2 = next(e for e in await h.events() if e["title"] == "Quiz 2")
     assert await h.changes(q2["id"]) == ["created", "restated"] and q2["time_known"]           # reminder did not erase the time
+
+
+async def test_reset_then_rerun_rebuilds_the_same_events_without_duplicates():
+    h = await Harness({
+        "quiz next sunday": extraction("event", [item("create", "quiz", "Quiz", WD("sun", "next", text="next sunday"), venue="LHC 104")]),
+        "Quiz 2 on Friday, 3 PM, in LHC 101": extraction("event", [item("create", "quiz", "Quiz 2", WD("fri", t="15:00", text="Friday, 3 PM"), venue="LHC 101")]),
+        "Correction: Quiz 2 is moved to Monday, same time": extraction("change", [item("reschedule", "quiz", "Quiz 2", WD("mon", text="Monday, same time"))]),
+    }).setup()
+    for when, text in (("2026-10-19 10:00", "quiz next sunday"), ("2026-10-20 10:00", "Quiz 2 on Friday, 3 PM, in LHC 101"),
+                       ("2026-10-21 10:00", "Correction: Quiz 2 is moved to Monday, same time")):
+        await h.post(when, text)
+    await h.run()
+    snap = lambda evs: sorted((e["title"], e["event_date"], e["status"], e["time_known"], e["venue"], e["needs_review"]) for e in evs)  # noqa: E731
+    first = snap(await h.events())
+    assert len(first) == 2
+    counts = await h.store.reset_ai_data("T1", dry_run=False)
+    assert counts["events"] == 2 and await h.events() == []
+    await h.run()
+    assert snap(await h.events()) == first                                                   # same events, none doubled
