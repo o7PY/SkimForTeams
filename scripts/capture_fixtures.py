@@ -68,7 +68,7 @@ class Sanitiser:
             return f"person-{self._person(v).split()[-1]}@example.invalid" if "@" in v else self._person(v)
         if key in TEXT_KEYS:
             return f"[text:{len(v)} chars]" if v else v
-        if URL.fullmatch(v.strip()):
+        if re.match(r"\s*https?://", v):  # the WHOLE value, spaces included ("https://host/Shared Documents/General/file.pdf")
             return self._url(v.strip())
         v = EMAIL.sub(lambda m: f"person-{self._person(m.group(0)).split()[-1]}@example.invalid", v)
         v = GUID.sub(lambda m: self._id(m.group(0)), v)
@@ -112,6 +112,8 @@ def leaks(obj: Any) -> list[str]:
     for m in URL.finditer(blob):
         if not m.group(0).startswith("https://example.invalid/"):
             found.append(f"url:{m.group(0)[:30]}…")
+    for m in re.finditer(r"https://example\.invalid/[0-9a-f]+[ /][^\"]{3,}", blob):  # something real left after the hashed URL
+        found.append(f"url-tail:{m.group(0)[26:40]}…")
     return found
 
 

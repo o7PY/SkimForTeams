@@ -35,3 +35,12 @@ def test_existing_fixtures_sanitise_cleanly():
 def test_leak_scan_catches_real_looking_data():
     assert cf.leaks({"x": "write to bob@example.com"})
     assert cf.leaks({"x": "https://tenant.sharepoint.com/a"})
+
+
+def test_url_with_spaces_is_replaced_entirely_and_a_leftover_tail_is_a_leak():
+    """A real fixture kept 'https://example.invalid/<hash> Documents/General/<lecture>.pdf' (a SharePoint path with spaces)."""
+    from capture_fixtures import Sanitiser, leaks
+    out = Sanitiser().walk({"contentUrl": "https://t.sharepoint.com/sites/x/Shared Documents/General/Lecture11_Notes.pdf"})
+    assert out["contentUrl"].startswith("https://example.invalid/") and " " not in out["contentUrl"] and "Lecture" not in str(out)
+    assert leaks(out) == []
+    assert leaks({"contentUrl": "https://example.invalid/abc123 Documents/General/Lecture11_Notes.pdf"})
