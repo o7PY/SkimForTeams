@@ -44,7 +44,8 @@ class MemoryAIMixin:
                         "from_name": m.get("from_name"), "reply_to_id": m.get("reply_to_id"),
                         "mentions": m.get("mentions"), "team_id": team["id"],
                         "installed_by_aad": team.get("installed_by_aad"),
-                        "parent_text": parent.get("text") if parent else None})
+                        "parent_text": parent.get("text") if parent else None,
+                        "parent_from_name": parent.get("from_name") if parent else None})
         out.sort(key=lambda r: (r["created_at"] or r["last_edited_at"] or _MIN, r["message_id"]))
         return out[:limit]
 

@@ -49,7 +49,7 @@ def author_role(msg: dict, cfg: AIConfig) -> str:
 
 
 def _names(msg: dict) -> list[str]:
-    names = [msg.get("from_name") or ""]
+    names = [msg.get("from_name") or "", msg.get("parent_from_name") or ""]  # the replied-to author is quoted in <parent>
 
     def walk(x: Any) -> None:
         if isinstance(x, dict):
@@ -69,8 +69,12 @@ def _names(msg: dict) -> list[str]:
 
 
 
+_OUR_TAGS = re.compile(r"<(/?)(message|parent|subject|document|author_role|posted_ist|item|candidates)\b", re.I)
+
+
 def _data(text: str | None) -> str:
-    return (text or "").replace("</", "<​/")  # data cannot close our wrapper tags
+    """Untrusted text can neither close nor imitate our wrapper tags (a zero-width space breaks them up)."""
+    return _OUR_TAGS.sub(lambda m: "<\u200b" + m.group(1) + m.group(2), (text or "").replace("</", "<\u200b/"))
 
 
 def _posted(msg: dict, fallback: datetime) -> tuple[datetime, bool]:

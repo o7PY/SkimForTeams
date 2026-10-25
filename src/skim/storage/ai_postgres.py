@@ -20,7 +20,7 @@ limit $1"""
 _PENDING_SQL = """
 select m.conversation_id, m.message_id, m.current_version as version, m.text, m.subject, m.created_at,
        m.last_edited_at, m.from_aad_id, m.from_name, m.reply_to_id, m.mentions, c.team_id, t.installed_by_aad,
-       p.text as parent_text
+       p.text as parent_text, p.from_name as parent_from_name
 from messages m
 join conversations c on c.id = m.conversation_id and c.team_id is not null and c.conversation_type = 'channel'
 join teams t on t.id = c.team_id and t.removed_at is null
