@@ -303,7 +303,7 @@ class Pipeline:
                 change("cancelled", {"status": old["status"]}, {"status": "cancelled"})
         else:
             rescheduled = False
-            moves = may_move(item.action) or own_edit  # an edit of the message that CREATED the event supersedes it
+            moves = may_move(item.action, msg.get("text")) or own_edit  # an edit of the message that CREATED the event supersedes it
             if res.event_date is not None:
                 new_t = res.time
                 old_has_time = bool(old.get("time_known"))

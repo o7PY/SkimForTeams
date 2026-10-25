@@ -217,3 +217,26 @@ async def test_a_reminder_may_fill_in_what_is_missing_but_never_overwrite():
     assert e["event_date"] == date(2026, 10, 23) and e["starts_at"].astimezone(IST).time() == time(15, 0)   # time filled once...
     assert e["needs_review"] is True                                                                          # ...the 4 PM conflict is flagged
     assert await h.changes(e["id"]) == ["created", "time_set", "needs_review"]
+
+
+async def test_a_reminder_the_model_mislabels_as_reschedule_still_moves_nothing():
+    """Live re-test: Quiz 1 ended on 26 Oct again. The resolver must not trust the model's label alone."""
+    for label in ("reschedule", "set_date", "details"):
+        h = await Harness(_script({"Reminder: Quiz 1 is on Monday": extraction("change", [item(label, "quiz", "Quiz 1", WD("mon", text="on Monday"))])})).setup()
+        await h.post("2026-10-23 09:00", A)
+        await h.post("2026-10-24 09:00", B)
+        await h.post("2026-10-26 01:44", "Reminder: Quiz 1 is on Monday")
+        await h.run()
+        e = await _quiz1(h)
+        assert (e["event_date"], e["status"], e["venue"]) == (date(2026, 11, 2), "rescheduled", "LHC 104"), label
+        assert e["starts_at"].astimezone(IST).time() == time(10, 0), label
+        assert await h.changes(e["id"]) == ["created", "rescheduled", "restated"], label
+
+
+def test_change_language():
+    from skim.ai.resolver import has_change_language as c
+    for yes in ("Quiz 2 is moved to Monday", "The quiz has been postponed", "Correction: now on Friday", "Lab rescheduled to Tuesday",
+                "deadline extended to 20 Nov", "Midsem shifted to LHC 201", "Quiz brought forward to Thursday", "It will now be held on Monday"):
+        assert c(yes), yes
+    for no in ("Reminder: Quiz 1 is on Monday", "Quiz 1 is tomorrow, bring your ID", "Reminder: the lab is today at 2 PM", "", None):
+        assert not c(no), no

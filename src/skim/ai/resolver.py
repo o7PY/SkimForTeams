@@ -41,8 +41,21 @@ MOVING_ACTIONS = frozenset({"reschedule"})
 _WEEKDAYS = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
 
-def may_move(action: str) -> bool:
-    return action in MOVING_ACTIONS
+# The words a message must contain before it may MOVE an event, whatever label the model gave the item (P3-DIFF-021).
+_CHANGE_LANGUAGE = re.compile(
+    r"\b(?:mov(?:e|ed|ing)|postpon\w*|re-?schedul\w*|prepon\w*|shift\w*|chang\w*|correct\w*|revis\w*|updat\w*|defer\w*|delay\w*|"
+    r"push(?:ed)?\s+(?:back|forward|to|up)|bring(?:ing)?\s+forward|brought\s+forward|advanc\w*|extend\w*|instead|"
+    r"now\s+(?:be\s+|will\s+be\s+)?(?:on|at|due|held|in|mon|tue|wed|thu|fri|sat|sun|\d)|will\s+now|has\s+been\s+(?:moved|shifted|changed))\b", re.I)
+
+
+def has_change_language(text: str | None) -> bool:
+    return bool(_CHANGE_LANGUAGE.search(text or ""))
+
+
+def may_move(action: str, text: str | None = None) -> bool:
+    """An item moves an event only if the model called it a reschedule AND the message really says something changed.
+    "Reminder: Quiz 1 is on Monday" never moves anything, even when the model mislabels it."""
+    return action in MOVING_ACTIONS and has_change_language(text)
 
 
 def weekday_agrees(when, event_date: date | None) -> bool:
