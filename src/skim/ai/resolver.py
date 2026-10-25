@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Awaitable, Callable
 
@@ -29,11 +29,18 @@ def numbers_compatible(a: frozenset[str], b: frozenset[str]) -> bool:
     return not a or not b or a == b
 
 
+def identifiers(words: frozenset[str], nums: frozenset[str]) -> frozenset[str]:
+    """What makes a title SPECIFIC: its numbers and any word that is not just the event type ("Quiz 2" -> {2},
+    "Lab session (Problem Set 3)" -> {problem, set, 3}, "Quiz" / "the lab" / "Office hours" -> {})."""
+    return frozenset((words - _TYPE_WORDS) | nums)
+
+
 @dataclass
 class Match:
     event: dict | None          # None = new event
     how: str                    # exact | subset | generic | tiebreak | new
     needs_review: bool = False
+    generic_events: list[dict] = field(default_factory=list)  # open GENERIC events a new specific event was NOT merged into
 
 
 def _open(events: list[dict], posted_date: date, allow_cancelled_past: bool) -> list[dict]:
@@ -49,22 +56,30 @@ def _open(events: list[dict], posted_date: date, allow_cancelled_past: bool) -> 
 
 def candidates_for(item_type: str, title: str, events: list[dict], claimed: set[int], posted_date: date,
                    new_date: date | None, allow_cancelled_past: bool = False) -> dict[str, list[dict]]:
-    """Group same-type open events by how well their title matches. Pure, so it is easy to test."""
+    """Group same-type open events by how well their title matches. Pure, so it is easy to test.
+
+    P3-DIFF-017: titles with DIFFERENT identifiers never merge. "Quiz 2" is not "Quiz 1" and not a generic "Quiz" (or
+    "Assignment 4" / "Assignment"): that is reported in `generic_events` so the caller can create the specific event and flag
+    the generic one. Only an item with NO identifier ("the quiz", "the lab") may weakly match a more specific event."""
     words, nums = tokens(title)
-    groups: dict[str, list[dict]] = {"exact": [], "subset": [], "generic": []}
+    ids = identifiers(words, nums)
+    groups: dict[str, list[dict]] = {"exact": [], "subset": [], "generic": [], "generic_events": []}
     for e in _open(events, posted_date, allow_cancelled_past):
         if e["type"] != item_type or e["id"] in claimed:
             continue
         if item_type in _RECURRING and new_date and e.get("event_date") and e["event_date"] != new_date:
             continue
         ew, en = tokens(e["title"])
-        if not numbers_compatible(nums, en):
-            continue
+        eids = identifiers(ew, en)
         if words == ew and nums == en:
             groups["exact"].append(e)
-        elif words and ew and (words <= ew or ew <= words):
-            groups["subset"].append(e)
-        elif words <= _TYPE_WORDS:
+        elif ids and eids:
+            if numbers_compatible(nums, en) and (ids <= eids or eids <= ids):
+                groups["subset"].append(e)      # e.g. "Lab Problem Set 3" ~ "Lab session (Problem Set 3)"
+        elif ids:                               # specific item, generic event: do NOT merge
+            if e["status"] != "cancelled":
+                groups["generic_events"].append(e)
+        elif words <= _TYPE_WORDS:              # generic item ("the quiz"): weak match against anything of that type
             groups["generic"].append(e)
     return groups
 
@@ -90,8 +105,10 @@ async def find_match(item: dict, events: list[dict], claimed: set[int], posted_d
         if len(pool) == 1:
             return Match(pool[0], level)
         if wants_existing:
-            return await _ask(item, pool, tiebreak)
-    return Match(None, "new")
+            m = await _ask(item, pool, tiebreak)
+            m.generic_events = groups["generic_events"] if m.event is None else []
+            return m
+    return Match(None, "new", generic_events=groups["generic_events"])
 
 
 async def _ask(item: dict, pool: list[dict], tiebreak: Tiebreak) -> Match:

@@ -227,6 +227,12 @@ class Pipeline:
                 op["virtual_id"] = virtual["id"]
                 ops.append(op)
                 out.created += 1
+                # P3-DIFF-017: a specific event was created next to a GENERIC one of the same type ("Quiz 2" vs "Quiz"):
+                # we did not merge them, so ask a human to look at the generic one.
+                for g in match.generic_events:
+                    if g["id"] > 0 and not g.get("needs_review") and g["id"] not in claimed:
+                        g["needs_review"] = True
+                        ops.append(self._flag_generic(g, title))
                 continue
             claimed.add(target["id"])
             op = self._update_event(target, item, title, venue, details, res, conf, review, msg)
@@ -245,6 +251,13 @@ class Pipeline:
         for op in ops:
             op.pop("virtual_id", None)
         return ops
+
+    @staticmethod
+    def _flag_generic(g: dict, specific_title: str) -> dict:
+        return {"kind": "update", "event_id": g["id"], "fields": {"needs_review": True}, "relation": "flagged", "link": False,
+                "changes": [{"change_type": "needs_review", "old_values": {"needs_review": False}, "confidence": "medium",
+                             "new_values": {"needs_review": True, "reason": "a more specific event of the same type was announced",
+                                            "specific_title": specific_title}}]}
 
     def _tiebreak_fn(self, red: Redactor, item: Item, title: str, guess: Resolved):
         async def ask(_item: dict, pool: list[dict]) -> str | None:

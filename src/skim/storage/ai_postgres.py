@@ -102,7 +102,7 @@ class PostgresAIMixin:
                              source_kind, source_ref, at) values ($1,$2,$3,$4,$5,$6,$7,$8)""",
                         eid, ch["change_type"], ch.get("old_values"), ch.get("new_values"), ch["confidence"],
                         source["kind"], source["ref"], source["at"])
-                if source["kind"] == "message":
+                if source["kind"] == "message" and op.get("link", True):
                     await conn.execute(
                         """insert into message_event_links (conversation_id, message_id, event_id, relation)
                            values ($1,$2,$3,$4)

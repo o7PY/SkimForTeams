@@ -103,7 +103,7 @@ class MemoryAIMixin:
             for ch in op["changes"]:
                 self.event_changes.append({"id": len(self.event_changes) + 1, "event_id": eid, "source_kind": source["kind"],
                                            "source_ref": source["ref"], "at": source["at"], "recorded_at": now, **ch})
-            if source["kind"] == "message":
+            if source["kind"] == "message" and op.get("link", True):
                 lk = (source["ref"]["conversation_id"], source["ref"]["message_id"], eid)
                 old = self.message_event_links.get(lk)
                 rel = "created" if old and old["relation"] == "created" else op["relation"]

@@ -38,3 +38,5 @@ Scoring notes (decided 2026-10-25):
 
 The validator checks columns, enums, date formats, that `time_known` agrees with the timestamp, that every weekday named
 in a message matches its date, that `links_to` points to an earlier event/change row, and that students have no events.
+
+**Change (2026-10-26, P3-DIFF-017):** msg 50's "Final presentations (day 1)" no longer has `links_to = 27`. A title with an identifier ("day 1", "Quiz 2", "Assignment 4") never merges into a generic event of the same type ("Final presentations", "Quiz", "Assignment"): a new specific event is created and the generic one is flagged `needs_review`.
