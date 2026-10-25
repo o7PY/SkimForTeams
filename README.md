@@ -103,7 +103,7 @@ Environment (Phase 3 switches itself off with ONE log line if a key or `GROQ_MOD
 | `GROQ_API_KEY`, `GROQ_MODEL` | none (required) | **Secondary** provider, e.g. `openai/gpt-oss-120b` |
 | `NIM_API_KEY`, `NIM_MODEL` | unset | Optional third provider (NVIDIA NIM), used only if both are set |
 | `EMBED_MODEL`, `EMBED_DIMS` | `gemini-embedding-001`, 768 | Dimensions must stay 768 (the column is `vector(768)`) |
-| `PROMPT_VERSION` | `p3-v2` | Bump whenever a prompt changes; messages are re-analysed under the new version |
+| `PROMPT_VERSION` | `p3-v2` | Bump whenever a prompt changes, or when you switch the primary model and want old messages re-analysed (the model is not part of the processing key) |
 | `STAFF_AAD_IDS` | empty | Comma list of staff AAD ids (the person who installed the bot always counts). **Set this**: with it, everyone else is a student and can never change events |
 | `AI_MAX_MESSAGES_PER_RUN`, `AI_MAX_DOCS_PER_RUN`, `AI_MAX_EMBEDS_PER_RUN` | 200 / 10 / 500 | Per-run limits |
 | `AI_MAX_ATTEMPTS` | 3 | A failing message is retried this many times |
