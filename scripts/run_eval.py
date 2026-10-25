@@ -47,7 +47,7 @@ async def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--note", default="", help="what changed since the last run")
     ap.add_argument("--pause", type=float, default=20.0, help="seconds to wait before retrying failed items (rate limits)")
     ap.add_argument("--interval", type=float, default=4.0, help="seconds between calls to one provider (free-tier pacing)")
-    ap.add_argument("--providers", default="groq,gemini", help="ordered, comma list of groq|gemini|nim (nim needs NIM_API_KEY + NIM_MODEL)")
+    ap.add_argument("--providers", default="gemini,groq", help="ordered, comma list of groq|gemini|nim (nim needs NIM_API_KEY + NIM_MODEL)")
     ap.add_argument("--no-log", action="store_true")
     a = ap.parse_args(argv)
 

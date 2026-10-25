@@ -67,5 +67,5 @@ def test_nim_is_optional_config_and_added_as_last_provider():
     assert not AIConfig.from_env(base).nim_api_key
     cfg = AIConfig.from_env({**base, "NIM_API_KEY": "nvapi-SECRET", "NIM_MODEL": "meta/llama"})
     assert cfg.enabled and "nvapi-SECRET" not in repr(cfg)
-    assert [p.name for p in AIServices.build(cfg, object()).router.providers] == ["groq", "gemini", "nim"]
-    assert [p.name for p in AIServices.build(AIConfig.from_env(base), object()).router.providers] == ["groq", "gemini"]
+    assert [p.name for p in AIServices.build(cfg, object()).router.providers] == ["gemini", "groq", "nim"]
+    assert [p.name for p in AIServices.build(AIConfig.from_env(base), object()).router.providers] == ["gemini", "groq"]
