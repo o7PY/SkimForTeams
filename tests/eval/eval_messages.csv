@@ -1,0 +1,55 @@
+msg_id,posted_at_ist,author,subject,text,category,event_type,event_title,start_or_due_ist,time_known,venue,status,links_to,notes
+1,2026-10-19 09:05,prof,Welcome,"Welcome to MA 221. Lectures are on Monday, Wednesday and Friday, 10:00–11:00 AM in LHC 104.",announcement,,,,,,,,Recurring timetable; not an event
+2,2026-10-19 09:10,prof,,"My office hours are on Tuesdays, 4–5 PM, in Room 213 of the Maths Department.",announcement,,,,,,,,Recurring office hours; not a one-off event
+3,2026-10-19 17:30,prof,,"Assignment 1 has been uploaded to the Files tab. It is due on Monday, 26 October, at 11:59 PM.",event,assignment,Assignment 1,2026-10-26 23:59,y,,scheduled,,
+4,2026-10-20 11:00,prof,,"Quiz 1 will be held this Friday during the lecture hour. Syllabus: Lectures 1–4.",event,quiz,Quiz 1,2026-10-23,n,,scheduled,,"""Lecture hour"" (10:00) is only known from msg 1; date-only is the correct answer"
+5,2026-10-20 11:05,student,,"Thanks, sir!",chitchat,,,,,,,,
+6,2026-10-21 08:15,prof,,"No lecture today. I am unwell. We will make up for it later.",change,class,Lecture,2026-10-21,n,,cancelled,,Cancels one lecture; makeup date not given — do not invent
+7,2026-10-21 20:00,prof,,"Makeup lecture: Saturday, 24 October, 11:00 AM–12:00 PM in LHC 104.",event,class,Makeup lecture,2026-10-24 11:00,y,LHC 104,scheduled,,New event (not a change of msg 6)
+8,2026-10-22 09:00,prof,,"Reminder: Quiz 1 is tomorrow. Bring your ID cards.",event,quiz,Quiz 1,2026-10-23,n,,scheduled,4,Reminder only — must link to msg 4 and NOT create a duplicate
+9,2026-10-22 15:40,prof,,"Correction: Quiz 1 will be from 10:15 to 10:45 AM, not the whole hour.",change,quiz,Quiz 1,2026-10-23 10:15,y,,rescheduled,4,Adds/changes the time of the existing quiz
+10,2026-10-23 12:00,prof,,"Quiz 1 solutions have been posted in the Files tab.",resource,,,,,,,,
+11,2026-10-23 12:10,student,,"Can we get the quiz papers back on Monday?",question,,,,,,,,Student question; not an event
+12,2026-10-26 09:00,prof,Assignment 1 deadline extended,"Due to many requests, the Assignment 1 deadline is extended to Wednesday, 28 October, 11:59 PM.",change,assignment,Assignment 1,2026-10-28 23:59,y,,rescheduled,3,
+13,2026-10-26 18:00,prof,,"Lecture 7 slides are uploaded.",resource,,,,,,,,
+14,2026-10-27 10:00,prof,,"Assignment 2 is out. Submit it by next Monday.",event,assignment,Assignment 2,2026-11-02 23:59,y,,scheduled,,"""Next Monday"" from Tue 27 Oct = 2 Nov; no time given → default 23:59 for deadlines"
+15,2026-10-27 16:10,prof,,"Office hours today are moved to 5–6 PM.",change,office_hours,Office hours,2026-10-27 17:00,y,Room 213,rescheduled,,One-off change of the recurring office hours (msg 2)
+16,2026-10-28 09:30,prof,Midsem schedule,"The midsem exam will be on Monday, 9 November, 2:00–5:00 PM, in the Main Exam Hall. Syllabus: Lectures 1–12.",event,exam,Midsem,2026-11-09 14:00,y,Main Exam Hall,scheduled,,Announcement with subject
+17,2026-10-28 09:35,prof,,"Please check the seating plan before the exam. It will be shared a week before.",announcement,,,,,,,,Info only; no date to extract
+18,2026-10-28 19:00,prof,,"Quiz 2 will be on 4 November and Quiz 3 on 18 November, both in class.",event,quiz,Quiz 2,2026-11-04,n,,scheduled,,Two events in one message (row 1 of 2)
+18,2026-10-28 19:00,prof,,"Quiz 2 will be on 4 November and Quiz 3 on 18 November, both in class.",event,quiz,Quiz 3,2026-11-18,n,,scheduled,,Two events in one message (row 2 of 2)
+19,2026-10-29 08:00,prof,,"Lab session for Problem Set 3: Friday, 30 October, 2–4 PM, Computer Lab 2. Attendance is mandatory.",event,lab,Lab session (Problem Set 3),2026-10-30 14:00,y,Computer Lab 2,scheduled,,
+20,2026-10-29 12:00,student,,hi all,chitchat,,,,,,,,
+21,2026-10-29 18:45,prof,,"The lab on Friday is cancelled. We will do it next week instead; I will announce the date.",change,lab,Lab session (Problem Set 3),2026-10-30 14:00,y,Computer Lab 2,cancelled,19,New date not given — do not invent one
+22,2026-10-30 10:00,prof,,"The lab session is moved to Tuesday, 3 November, same time and place.",change,lab,Lab session (Problem Set 3),2026-11-03 14:00,y,Computer Lab 2,rescheduled,19,"""Same time and place"" must be resolved from the existing event"
+23,2026-10-30 11:30,student,,"Great lecture today, thank you!",chitchat,,,,,,,,
+24,2026-10-31 13:00,student,,"Has anyone started Assignment 2?",question,,,,,,,,
+25,2026-11-01 21:00,prof,,"Reminder: Assignment 2 is due tomorrow night.",event,assignment,Assignment 2,2026-11-02 23:59,y,,scheduled,14,Reminder only — no change and no duplicate
+26,2026-11-02 08:00,prof,,"Project groups: please form groups of 3 and send me your group list by Friday.",event,project,Project group list,2026-11-06 23:59,y,,scheduled,,Deadline with no time → 23:59
+27,2026-11-02 08:05,prof,,"The project proposal is due on 13 November. Final presentations will be in the last week of classes.",event,project,Project proposal,2026-11-13 23:59,y,,scheduled,,Two events (row 1 of 2)
+27,2026-11-02 08:05,prof,,"The project proposal is due on 13 November. Final presentations will be in the last week of classes.",event,presentation,Final presentations,,n,,scheduled,,"Two events (row 2 of 2): no date — keep date empty, confidence low"
+28,2026-11-03 09:00,prof,,"Today's office hours are cancelled.",change,office_hours,Office hours,2026-11-03,n,Room 213,cancelled,,
+29,2026-11-03 13:00,prof,,"Reminder: the lab is today at 2 PM in Computer Lab 2.",event,lab,Lab session (Problem Set 3),2026-11-03 14:00,y,Computer Lab 2,scheduled,19,Reminder; matches the rescheduled date from msg 22
+30,2026-11-04 07:30,prof,,"Quiz 2 is postponed to Friday, 6 November, same time.",change,quiz,Quiz 2,2026-11-06,n,,rescheduled,18,"""Same time"" = original quiz time, which was never given → date-only"
+31,2026-11-04 10:50,prof,,"Today's lecture recording is uploaded.",resource,,,,,,,,
+32,2026-11-05 16:00,student,,"Is the midsem open book?",question,,,,,,,,
+33,2026-11-05 16:30,prof,,"No, the midsem is closed book. You may bring one A4 sheet of formulas.",announcement,,,,,,,16,Extra info about the midsem; no date change
+34,2026-11-06 12:00,prof,,"Quiz 2 marks are on Moodle.",announcement,,,,,,,,
+35,2026-11-06 18:00,prof,Midsem venue change,"The midsem has been moved from the Main Exam Hall to LHC 201 and LHC 202. Your room will depend on your roll number. The date and time are unchanged.",change,exam,Midsem,2026-11-09 14:00,y,LHC 201 / LHC 202,scheduled,16,Venue change only — date/time unchanged
+36,2026-11-07 10:00,prof,,"Extra doubt-clearing class tomorrow (Sunday) at 4 PM in LHC 104.",event,class,Doubt-clearing class,2026-11-08 16:00,y,LHC 104,scheduled,,
+37,2026-11-08 09:00,prof,,"Reminder: the midsem is tomorrow at 2 PM in LHC 201 and LHC 202. All the best!",event,exam,Midsem,2026-11-09 14:00,y,LHC 201 / LHC 202,scheduled,16,Reminder; venue matches the change in msg 35
+38,2026-11-09 20:00,prof,,"Assignment 3 will be released on Wednesday and will be due one week after release.",event,assignment,Assignment 3,2026-11-18 23:59,y,,scheduled,,Wed 11 Nov + 7 days = 18 Nov; confidence medium
+39,2026-11-10 09:00,prof,,"There will be no lectures on Wednesday and Friday this week because of the institute fest.",change,class,Lecture,2026-11-11,n,,cancelled,,Two cancellations (row 1 of 2)
+39,2026-11-10 09:00,prof,,"There will be no lectures on Wednesday and Friday this week because of the institute fest.",change,class,Lecture,2026-11-13,n,,cancelled,,Two cancellations (row 2 of 2)
+40,2026-11-10 09:10,prof,,"Because of this, Assignment 3 will now be released on Monday and will be due on Friday, 20 November.",change,assignment,Assignment 3,2026-11-20 23:59,y,,rescheduled,38,
+41,2026-11-10 14:00,prof,,"The project proposal deadline is unchanged.",event,project,Project proposal,2026-11-13 23:59,y,,scheduled,27,Restatement — no change and no duplicate
+42,2026-11-11 11:00,prof,,"Midsem answer scripts will be shown on Thursday from 3 to 5 PM in Room 213.",event,other,Midsem answer script viewing,2026-11-12 15:00,y,Room 213,scheduled,,
+43,2026-11-11 11:05,student,,ok sir,chitchat,,,,,,,,
+44,2026-11-12 09:00,prof,,"Quiz 3 will now be a take-home quiz. It will be released on 18 November and is due on 20 November at 5 PM.",change,quiz,Quiz 3,2026-11-20 17:00,y,,rescheduled,18,Format and deadline changed
+45,2026-11-12 10:00,prof,,"Lecture 15 notes and the practice problem set are in the Files tab.",resource,,,,,,,,
+46,2026-11-12 17:00,student,,"Can someone share the link to the Moodle page?",question,,,,,,,,
+47,2026-11-13 08:00,prof,,"Reminder: the project proposal is due tonight at 11:59 PM.",event,project,Project proposal,2026-11-13 23:59,y,,scheduled,27,Reminder — no duplicate
+48,2026-11-13 15:00,prof,Endsem exam,"The endsem exam is tentatively scheduled for the first week of December. The exact date will be announced later.",event,exam,Endsem,,n,,scheduled,,No exact date — keep it empty; confidence low
+49,2026-11-13 15:05,prof,,"From next week onwards, office hours will be on Thursdays, 4–5 PM, instead of Tuesdays.",change,office_hours,Office hours (weekly),2026-11-19 16:00,y,Room 213,rescheduled,,Recurring change; first new slot is Thu 19 Nov
+50,2026-11-13 18:00,prof,,"Final presentations will be on Monday, 30 November, and Tuesday, 1 December, 2–5 PM in LHC 104. Each group's slot will be shared later.",change,presentation,Final presentations (day 1),2026-11-30 14:00,y,LHC 104,rescheduled,27,Gives a date to the undated event from msg 27 (row 1 of 2)
+50,2026-11-13 18:00,prof,,"Final presentations will be on Monday, 30 November, and Tuesday, 1 December, 2–5 PM in LHC 104. Each group's slot will be shared later.",change,presentation,Final presentations (day 2),2026-12-01 14:00,y,LHC 104,rescheduled,27,(row 2 of 2)
