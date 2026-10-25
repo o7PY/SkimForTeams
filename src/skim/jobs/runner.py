@@ -150,6 +150,11 @@ async def step_ai_reprocess(ctx: JobContext, team_id: str | None) -> str:
     """Re-run messages under another prompt version; old analyses stay and events are NOT touched (a replay of old
     messages would otherwise undo later changes)."""
     pv = ctx.options.get("prompt_version")
+    if ctx.ai is not None and pv == ctx.ai.cfg.prompt_version:
+        # The live version decides what is still pending for ai-process; analysing it here WITHOUT applying events
+        # would mark messages done and their events would never be created.
+        ctx.stats["ai_reprocess_rejected_live_version"] += 1
+        return "ok"
     if ctx.ai is None or not pv:
         ctx.stats["ai_disabled" if ctx.ai is None else "ai_missing_prompt_version"] += 1
         return "ok"

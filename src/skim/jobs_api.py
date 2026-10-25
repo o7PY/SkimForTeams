@@ -23,6 +23,8 @@ def register(app: web.Application, runner: JobRunner, token: str) -> None:
             pv = request.query.get("prompt_version")
             if job == "ai-reprocess" and not (pv and re.fullmatch(r"[A-Za-z0-9._-]{1,40}", pv)):
                 return web.json_response({"error": "prompt_version is required (letters, digits, . _ -)"}, status=400)
+            if job == "ai-reprocess" and runner.ai is not None and pv == runner.ai.cfg.prompt_version:
+                return web.json_response({"error": "prompt_version is the live version; bump PROMPT_VERSION instead"}, status=400)
             result = await runner.run(job, request.query.get("team_id") or None, int(since) if since else None,
                                       request.query.get("force", "").lower() in ("1", "true", "yes"), pv)
             return web.json_response(result, status=500 if result["status"] == "error" else 200)  # JSON either way

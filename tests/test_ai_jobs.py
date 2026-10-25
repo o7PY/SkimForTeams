@@ -107,6 +107,7 @@ async def test_reprocess_keeps_old_analyses_and_leaves_events_alone():
         events = await store.list_events(team_id=TEAM)
         assert len(events) == 1 and [c["change_type"] for c in (await store.get_event(events[0]["id"]))["changes"]] == ["created"]
         assert (await client.post("/jobs/ai-reprocess", headers=AUTH)).status == 400
+        assert (await client.post(f"/jobs/ai-reprocess?prompt_version={CFG.prompt_version}", headers=AUTH)).status == 400
         assert (await client.post("/jobs/ai-reprocess?prompt_version=../x", headers=AUTH)).status == 400
     finally:
         await close()

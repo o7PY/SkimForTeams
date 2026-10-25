@@ -41,7 +41,8 @@ ITEMS: only when category is event or change; otherwise []. One item per distinc
   - kind "relative": today / tonight / tomorrow = anchor "posted", days 0 / 0 / 1. "in 3 days" / "in 2 weeks" = anchor "offset", days / weeks.
     A weekday name = anchor "weekday", weekday mon|tue|wed|thu|fri|sat|sun, qualifier "this" for "this Friday" / "on Friday" / "Friday", "next" ONLY when the message says "next Friday".
     "one week after Wednesday" = anchor "weekday", weekday "wed", weeks 1. Put a stated time in `time`.
-  - kind "same_as_existing": ONLY when the message changes something else and keeps the date and time of the event unchanged.
+  - kind "same_as_existing": when the message keeps the event's date and either changes something else, or only gives / changes the TIME
+    ("the quiz will be 10:15-10:45"): set `time` / `end_time` and leave `date` null; the system keeps the event's date.
   - kind "vague": a period without a date ("first week of December", "last week of classes", "later", "next month").
   - kind "none": no date or time given (e.g. only the venue changes, or "the date will be announced").
   - "same time" / "same place": leave `time` null and copy the phrase into `text`; the system copies the old time. Never guess a time that is not written.

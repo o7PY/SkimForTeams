@@ -157,3 +157,14 @@ def test_same_as_existing_kind_copies_everything_and_never_invents():
                                    ("same venue", True), ("same time", False), ("in a different room", False)])
 def test_same_place_phrases(s, yes):
     assert wants_same_place(s) is yes
+
+
+def test_time_only_message_uses_the_matched_events_date():  # msg 9
+    r = R(When(kind="same_as_existing", time="10:15", end_time="10:45", text="10:15 to 10:45 AM"), "2026-10-22 15:40",
+          existing=EXISTING_DATE_ONLY)
+    assert (r.event_date, r.time.strftime("%H:%M"), r.end_time.strftime("%H:%M"), r.time_known) == (date(2026, 11, 4), "10:15", "10:45", True)
+
+
+def test_time_only_message_without_an_event_is_not_guessed():
+    r = R(When(kind="none", time="10:15"), "2026-10-22 15:40")
+    assert r.event_date is None and r.time is None and r.needs_review

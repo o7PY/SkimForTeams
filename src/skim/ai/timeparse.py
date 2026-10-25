@@ -91,6 +91,12 @@ def resolve_when(when: When, posted: datetime, *, is_deadline: bool = False, exi
     at, end = _clock(when.time), _clock(when.end_time)
     conf, why = "high", ""
 
+    if when.kind in ("none", "same_as_existing") and at is not None:
+        # A time with no date ("the quiz will be 10:15-10:45"): it belongs to the matched event's date. Never invented.
+        if existing and existing.get("event_date"):
+            return Resolved(existing["event_date"], at, end if end and end > at else None, True, False, "high", False,
+                            "time-on-existing-date")
+        return Resolved(max_confidence="low", needs_review=True, reason="time-without-date")
     if when.kind == "none":
         return Resolved(reason="no-date")
     if when.kind == "vague":
