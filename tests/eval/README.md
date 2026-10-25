@@ -23,6 +23,15 @@ carrying state, so later rows resolve against events created by earlier ones.
 Rules of thumb used by the scorer: `links_to` is only scored on `event`/`change` rows; on other rows it is ignored.
 Unstated time -> `time_known = n` and the pipeline must not invent one (metric "invented times" must be 0).
 
+Scoring notes (decided 2026-10-25):
+- 23:59 on a deadline counts as correct whether it was stated or defaulted.
+- End times are **not scored** in Phase 3 (e.g. msg 9's 10:45).
+- `time_set` / `date_set` rows (msgs 9, 50) have status `scheduled`; a reminder after a reschedule keeps `rescheduled` (msg 29).
+- A cancel/reschedule of a recurring item with a clear date creates a new event with that status (msgs 6, 15, 28, 39).
+- Weekly office hours (msg 49) are one event for the first new slot; recurrence is future work.
+- Venues are only labelled when the message states them or the linked event has them.
+- `links_to` on non-event rows is ignored; msg 50 day 2 has none (it is a new event).
+
 ## Check it
     python scripts/validate_eval.py        # errors fail; warnings are informational
     pytest tests/test_eval_set.py
