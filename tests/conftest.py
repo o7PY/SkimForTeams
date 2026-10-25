@@ -20,7 +20,12 @@ def wipe_guard(dsn: str) -> None:
     contains 'test', or the human set SKIM_TEST_DB_MAY_BE_WIPED=yes for this run. Never point this at production."""
     import os
     from urllib.parse import urlsplit
-    name = urlsplit(dsn).path.strip("/").lower()
+    parts = urlsplit(dsn)
+    if parts.scheme not in ("postgresql", "postgres") or not parts.hostname:
+        raise pytest.UsageError(
+            "TEST_DATABASE_URL is not a connection string. Expected postgresql://USER:PASSWORD@HOST:5432/DBNAME (URL-encode special "
+            "characters in the password); copy it from Supabase: Connect > Session pooler. Do not leave a <placeholder> in it.")
+    name = parts.path.strip("/").lower()
     if "test" not in name and os.environ.get("SKIM_TEST_DB_MAY_BE_WIPED") != "yes":
         raise pytest.UsageError(
             f"TEST_DATABASE_URL points at database {name!r}: these tests DROP the whole public schema. Use a throwaway "

@@ -205,3 +205,12 @@ def test_wipe_guard_refuses_a_database_that_is_not_clearly_disposable(monkeypatc
     wipe_guard("postgresql://u:p@localhost:5432/skim_test")
     monkeypatch.setenv("SKIM_TEST_DB_MAY_BE_WIPED", "yes")
     wipe_guard("postgresql://u:p@db.example.supabase.co:5432/postgres")
+
+
+def test_wipe_guard_explains_a_malformed_test_database_url(monkeypatch):
+    import pytest
+    from conftest import wipe_guard
+    monkeypatch.setenv("SKIM_TEST_DB_MAY_BE_WIPED", "yes")
+    for bad in ("<TEST project session-pooler URL>", "", "mysql://u:p@h/db", "postgresql:///db"):
+        with pytest.raises(pytest.UsageError, match="not a connection string"):
+            wipe_guard(bad)
