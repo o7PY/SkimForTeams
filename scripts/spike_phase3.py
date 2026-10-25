@@ -6,7 +6,7 @@ Usage (keys come from the environment, never printed):
 
 Answers:
   1. Which Groq models are listed, and which of the candidates support JSON (json_schema strict / json_object)?
-  2. Does the Gemini free-tier model (default gemini-2.5-flash-lite) support JSON mode with a response schema?
+  2. Does the Gemini free-tier model (default gemini-2.5-flash-lite; use --gemini-model gemini-3.5-flash-lite) support JSON mode with a response schema?
   3. Does gemini-embedding-001 return 768 dims with output_dimensionality=768?
   4. Latency per call, token usage where reported, and rate-limit headers.
 Writes a sanitised JSON (no keys, no prompts beyond the synthetic ones) for Bookkeeping/PHASE3_SPIKE.md.

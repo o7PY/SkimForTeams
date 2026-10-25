@@ -25,7 +25,7 @@ class AIConfig:
     groq_model: str = ""
     nim_api_key: str | None = field(default=None, repr=False)
     nim_model: str = ""   # optional third provider (NVIDIA NIM); used only when both NIM_API_KEY and NIM_MODEL are set
-    gemini_model: str = "gemini-2.5-flash-lite"
+    gemini_model: str = "gemini-3.5-flash-lite"
     embed_model: str = "gemini-embedding-001"
     embed_dims: int = 768
     prompt_version: str = "p3-v1"

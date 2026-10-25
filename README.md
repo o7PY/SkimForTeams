@@ -87,6 +87,71 @@ BASE_URL=https://<service> DEBUG_TOKEN=… [JOBS_TOKEN=…] python scripts/smoke
 python scripts/spike_phase2.py [--team-id <aad_group_id>]   # read-only Graph probe with sanitised output
 ```
 
+## Phase 3: AI understanding (classify messages, extract events, search)
+Spec: `Bookkeeping/PHASE3.md`. Each new channel message goes through: **redact** (names, emails, phones, roll numbers become
+placeholders) → **classify + extract** (Gemini first, Groq as fallback; LLM output is untrusted data, schema-validated, never
+executed) → **dates resolved in code** (`timeparse.py`, IST, never guessed) → **match** against open events → saved in ONE
+transaction with a full `event_changes` history. Students never create or change events. Files (pdf/docx/pptx) are read too.
+
+Environment (Phase 3 switches itself off with ONE log line if a key or `GROQ_MODEL` is missing; `AI_ENABLED=false` makes
+`run-all` behave exactly like Phase 2). Put real values in Secret Manager / your git-ignored `.env`, never in git.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AI_ENABLED` | true | Kill switch |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | `gemini-3.5-flash-lite` | **Primary** provider; also embeddings. Must be a model your key can call (the eval was run with this one) |
+| `GROQ_API_KEY`, `GROQ_MODEL` | none (required) | **Secondary** provider, e.g. `openai/gpt-oss-120b` |
+| `NIM_API_KEY`, `NIM_MODEL` | unset | Optional third provider (NVIDIA NIM), used only if both are set |
+| `EMBED_MODEL`, `EMBED_DIMS` | `gemini-embedding-001`, 768 | Dimensions must stay 768 (the column is `vector(768)`) |
+| `PROMPT_VERSION` | `p3-v1` | Bump whenever a prompt changes; messages are re-analysed under the new version |
+| `STAFF_AAD_IDS` | empty | Comma list of staff AAD ids (the person who installed the bot always counts). **Set this**: with it, everyone else is a student and can never change events |
+| `AI_MAX_MESSAGES_PER_RUN`, `AI_MAX_DOCS_PER_RUN`, `AI_MAX_EMBEDS_PER_RUN` | 200 / 10 / 500 | Per-run limits |
+| `AI_MAX_ATTEMPTS` | 3 | A failing message is retried this many times |
+| `AI_MIN_CALL_INTERVAL` | 2 | Seconds between calls to one provider (free-tier rate limits) |
+| `DOC_MAX_BYTES`, `DOC_MAX_PAGES`, `DOC_MAX_CHARS` | 20 MB / 50 / 150000 | File limits; over a limit the file is skipped with a reason |
+| `COURSE_TIMEZONE` | `Asia/Kolkata` | Used for relative dates and the 23:59 deadline default |
+
+Migration `005_phase3.sql` (needs the pgvector extension) must be applied **before** deploying: `python scripts/migrate.py`.
+
+**Jobs** (same token, lock and time budget as Phase 2; all are part of `run-all` when AI is on):
+`POST /jobs/ai-process` (messages → events) · `/jobs/ai-documents` (files → text, chunks, events) · `/jobs/ai-embed`
+(vectors for search) · `/jobs/ai-reprocess?prompt_version=p3-v2` (re-analyse messages under another prompt version; old
+analyses are kept and events are NOT touched; the live version is rejected: bump `PROMPT_VERSION` instead).
+A provider outage or rate limit never fails a run: the work stays pending and is retried.
+
+**To re-process after a prompt change:** edit `src/skim/ai/prompts/*.md`, bump `PROMPT_VERSION` (env), deploy; the next
+`run-all` analyses every message again under the new version. To compare first, run the eval (below).
+
+Debug endpoints (`DEBUG_TOKEN`): `/debug/events?team_id=&status=&type=&needs_review=` · `/debug/events/{id}` (the event, its
+whole change history and linked messages) · `/debug/message-ai/{conversation_id}/{message_id}` · `/debug/search?q=&team_id=&k=`
+(semantic search; the query is redacted first) · `/debug/ai-status` (models, failures by class, pending counts, embeddings).
+Logs and `job_runs.stats` carry numbers and error classes only: never message text, names, prompts or keys.
+
+**Eval** (50 labelled messages in `tests/eval/`; synthetic, free-tier calls):
+```bash
+set -a; . ./.env; set +a
+python scripts/run_eval.py --dry                       # recorded perfect model: tests the code, no network
+python scripts/run_eval.py --providers gemini,groq --note "what changed"   # real models; appends to Bookkeeping/PHASE3_EVAL.md
+python scripts/eval_search.py                          # real embeddings: hit@3 on 10 questions
+python scripts/eval_nim.py --probe                     # optional: which NVIDIA NIM models work for your key
+python scripts/validate_eval.py                        # checks the answer key itself
+python scripts/capture_fixtures.py --dry               # sanitised real payload shapes -> tests/fixtures/real/ (read-only DB)
+```
+Targets (spec §10.1): category ≥ 90%, event F1 ≥ 0.85, type ≥ 90%, date/time ≥ 85%, linking ≥ 85%, and ZERO invented times,
+duplicate events, or events from student messages.
+
+### Phase 3 manual acceptance checklist (real test tenant)
+- [ ] Post ~10 realistic messages as the professor; after one `run-all`, `/debug/events` shows the right events with IST dates and times.
+- [ ] Post a correction ("moved to …"): the SAME event becomes `rescheduled`, with an `event_changes` row old → new.
+- [ ] Post a reminder: no duplicate event; a `restated` link exists.
+- [ ] Post as a student "Is the quiz moved to Monday?": no event changes.
+- [ ] Upload a PDF with a deadline: `document_texts` is ok, chunks exist, an event appears with `source_kind = document`.
+- [ ] `/debug/search?q=when is the midsem` returns the midsem messages first.
+- [ ] Edit a message's date: the event updates and the history shows the edit time.
+- [ ] `AI_ENABLED=false` → `run-all` works exactly like Phase 2.
+- [ ] `job_runs.stats` has AI counts and no text or names anywhere in the logs.
+- [ ] Scheduler runs keep succeeding for a day; `/debug/ai-status` shows no pile-up of failures.
+
 ## Manual acceptance checklist (real test tenant)
 - [ ] Adding the bot to a team posts the welcome + pairing code exactly once (even if Teams sends both installationUpdate and conversationUpdate); a `teams` row has that code. Remove + re-add welcomes again.
 - [ ] A channel post **without @mention** appears in `messages` within ~5 s.

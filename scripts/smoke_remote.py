@@ -2,8 +2,8 @@
 
     BASE_URL=https://<service> DEBUG_TOKEN=... [JOBS_TOKEN=...] python scripts/smoke_remote.py [--jobs]
 
-Checks /health (including db_schema), the Phase 1 and Phase 2 /debug endpoints, and with --jobs and JOBS_TOKEN
-`POST /jobs/run-all` (twice: the second run must not create anything). Exit code 0 only if every check passes.
+Checks /health (including db_schema), the Phase 1-3 /debug endpoints (events, ai-status, search), and with --jobs and JOBS_TOKEN
+`POST /jobs/run-all` (twice: the second run must not create anything) and `/jobs/ai-process`. Exit code 0 only if every check passes.
 Prints no tokens and no message/file content, only counts and statuses."""
 from __future__ import annotations
 
@@ -49,6 +49,18 @@ async def run(base: str, debug_token: str | None, jobs_token: str | None, jobs: 
                 check("GET /debug/documents/{id}", st == 200 and {"document", "events", "attachments"} <= set(body or {}), f"status={st}")
             st, body = await call("GET", "/debug/documents/999999999", debug_token)
             check("unknown document -> 404", st == 404)
+            # Phase 3 (FR-312)
+            st, body = await call("GET", "/debug/events?limit=5", debug_token)
+            check("GET /debug/events", st == 200 and isinstance(body, list), f"status={st}")
+            if st == 200 and body:
+                st, ev = await call("GET", f"/debug/events/{body[0]['id']}", debug_token)
+                check("GET /debug/events/{id} has its change history", st == 200 and "changes" in (ev or {}), f"status={st}")
+            check("unknown event -> 404", (await call("GET", "/debug/events/999999999", debug_token))[0] == 404)
+            st, body = await call("GET", "/debug/ai-status", debug_token)
+            check("GET /debug/ai-status", st == 200 and isinstance(body, dict) and "enabled" in body, f"status={st}")
+            if st == 200 and body and body.get("enabled") and body.get("embeddings"):
+                st, found = await call("GET", "/debug/search?q=when%20is%20the%20midsem&k=3", debug_token)
+                check("GET /debug/search", st == 200 and isinstance(found, dict) and "hits" in found, f"status={st}")
         else:
             check("debug endpoints (skipped: DEBUG_TOKEN not set)", True)
         if jobs and jobs_token:
@@ -61,6 +73,9 @@ async def run(base: str, debug_token: str | None, jobs_token: str | None, jobs: 
                 if n == 2 and ok and body.get("status") == "ok":
                     created = (body.get("stats") or {}).get("created", 0)
                     check("second run-all creates nothing", created == 0, f"created={created}")
+            st, body = await call("POST", "/jobs/ai-process", jobs_token)
+            check("POST /jobs/ai-process", st == 200 and body and body.get("status") in ("ok", "partial"),
+                  f"http={st} status={body and body.get('status')}")
         elif jobs:
             check("jobs (skipped: JOBS_TOKEN not set)", True)
     finally:
