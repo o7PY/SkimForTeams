@@ -15,6 +15,7 @@ from ..graph.client import GraphClient, GraphError
 from ..storage.base import Storage
 from .common import Budget, JobContext
 from .ai_documents import ai_documents
+from .ai_embed import ai_embed
 from .ai_process import ai_process
 from .enrich import enrich_team
 from .refill import refill_empty
@@ -154,6 +155,13 @@ async def step_ai_documents(ctx: JobContext, team_id: str | None) -> str:
     return await ai_documents(ctx, team_id)
 
 
+async def step_ai_embed(ctx: JobContext, team_id: str | None) -> str:
+    if ctx.ai is None:
+        ctx.stats["ai_disabled"] += 1
+        return "ok"
+    return await ai_embed(ctx, team_id)
+
+
 async def step_ai_reprocess(ctx: JobContext, team_id: str | None) -> str:
     """Re-run messages under another prompt version; old analyses stay and events are NOT touched (a replay of old
     messages would otherwise undo later changes)."""
@@ -188,7 +196,7 @@ async def step_ai_all(ctx: JobContext, team_id: str | None) -> str:
     return "partial" if "partial" in results else "ok"
 
 
-AI_STEPS: list[Step] = [step_ai_process, step_ai_documents]
+AI_STEPS: list[Step] = [step_ai_process, step_ai_documents, step_ai_embed]
 EXTRA_RUN_ALL_STEPS: list[Step] = [step_fix_text, step_backfill_initial, step_enrich_messages, step_refill_empty, step_link_attachments, step_ai_all]
 STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_files, "backfill": step_backfill,
                           "fix-text": step_fix_text,
@@ -196,6 +204,7 @@ STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_fil
                           "refill-empty": step_refill_empty,
                           "link-attachments": step_link_attachments, "ai-process": step_ai_process,
                           "ai-documents": step_ai_documents,
+                          "ai-embed": step_ai_embed,
                           "ai-reprocess": step_ai_reprocess, "run-all": step_run_all}
 
 

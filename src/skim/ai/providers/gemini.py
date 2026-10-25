@@ -55,6 +55,20 @@ class GeminiProvider:
         except (KeyError, IndexError, TypeError):
             raise ProviderError("server", detail="no candidate") from None
 
+    async def embed(self, model: str, texts: list[str], dims: int, task: str) -> tuple[list[list[float]], int | None]:
+        """Batch-embed REDACTED texts. task: RETRIEVAL_DOCUMENT | RETRIEVAL_QUERY. Returns (vectors, tokens or None).
+        Raises ProviderError; a wrong-sized or short answer is a 'server' error (nothing is stored from it)."""
+        body = {"requests": [{"model": f"models/{model}", "content": {"parts": [{"text": t}]},
+                              "outputDimensionality": dims, "taskType": task} for t in texts]}
+        data, _ = await self._post(f"models/{model}:batchEmbedContents", body)
+        try:
+            vecs = [[float(x) for x in e["values"]] for e in data["embeddings"]]
+        except (KeyError, TypeError, ValueError):
+            raise ProviderError("server", detail="malformed embeddings") from None
+        if len(vecs) != len(texts) or any(len(v) != dims for v in vecs):
+            raise ProviderError("server", detail="unexpected embedding shape")
+        return vecs, None
+
     async def close(self) -> None:
         if self._session is not None and self._own:
             await self._session.close()

@@ -187,3 +187,85 @@ class PostgresAIMixin:
         assert self.pool
         return [dict(r) for r in await self.pool.fetch(
             "select * from doc_chunks where document_id=$1 order by chunk_index", document_id)]
+
+    # ---- embeddings (FR-307)
+    async def list_unembedded(self, model: str, limit: int) -> list[dict]:
+        assert self.pool
+        msgs = await self.pool.fetch(_UNEMBEDDED_MESSAGES_SQL, model, limit)
+        out = [{**dict(r), "item": "message"} for r in msgs]
+        if len(out) < limit:
+            chunks = await self.pool.fetch(_UNEMBEDDED_CHUNKS_SQL, model, limit - len(out))
+            out += [{**dict(r), "item": "doc_chunk"} for r in chunks]
+        return out
+
+    async def save_embeddings(self, rows: list[dict]) -> int:
+        assert self.pool
+        async with self.pool.acquire() as conn, conn.transaction():
+            n = 0
+            for r in rows:
+                tag = await conn.execute(
+                    """insert into embeddings (kind, ref, ref_key, model, dims, embedding)
+                       values ($1,$2,$3,$4,$5,$6::text::vector) on conflict (ref_key) do nothing""",
+                    r["kind"], r["ref"], f"{r['ref_key']}:{r['model']}", r["model"], r["dims"], _vec(r["embedding"]))
+                n += tag.endswith(" 1")
+            return n
+
+    async def search_embeddings(self, vector: list[float], model: str, team_id: str | None, k: int) -> list[dict]:
+        assert self.pool
+        rows = await self.pool.fetch(_SEARCH_SQL, _vec(vector), model, team_id, k)
+        return [{"kind": r["kind"], "ref": r["ref"], "team_id": r["team_id"], "score": round(float(r["score"]), 4),
+                 "snippet": (r["snippet"] or "")[:300]} for r in rows]
+
+    async def count_embeddings(self, model: str) -> int:
+        assert self.pool
+        return await self.pool.fetchval("select count(*) from embeddings where model=$1", model)
+
+
+def _vec(v: list[float]) -> str:
+    return "[" + ",".join(f"{x:.7g}" for x in v) + "]"
+
+
+_UNEMBEDDED_MESSAGES_SQL = """
+select m.conversation_id, m.message_id, m.current_version as version, m.text, m.subject, m.from_name, m.mentions, c.team_id
+from messages m
+join conversations c on c.id = m.conversation_id and c.team_id is not null and c.conversation_type = 'channel'
+join teams t on t.id = c.team_id and t.removed_at is null
+left join channels ch on ch.id = m.conversation_id
+where m.deleted_at is null and coalesce(ch.membership_type, 'standard') = 'standard'
+  and (coalesce(m.text, '') <> '' or coalesce(m.subject, '') <> '')
+  and not exists (select 1 from embeddings e where e.ref_key =
+        'msg:' || m.conversation_id || ':' || m.message_id || ':v' || m.current_version || ':' || $1)
+order by coalesce(m.created_at, m.last_edited_at) asc, m.message_id asc
+limit $2"""
+
+_UNEMBEDDED_CHUNKS_SQL = """
+select k.id, k.document_id, k.chunk_index, k.text, d.team_id, d.created_by_name, d.modified_by_name
+from doc_chunks k
+join documents d on d.id = k.document_id and d.deleted_at is null
+join teams t on t.id = d.team_id and t.removed_at is null
+join document_texts x on x.document_id = d.id and x.status = 'ok' and x.ctag is not distinct from k.ctag
+where not exists (select 1 from embeddings e where e.ref_key = 'chunk:' || k.id || ':' || $1)
+order by k.id asc
+limit $2"""
+
+# Only CURRENT versions of live messages and chunks of live documents of active teams; optional team filter.
+_SEARCH_SQL = """
+select * from (
+  select 'message' as kind, e.ref, c.team_id, coalesce(m.subject || E'\\n', '') || coalesce(m.text, '') as snippet,
+         1 - (e.embedding <=> $1::text::vector) as score
+  from embeddings e
+  join messages m on m.conversation_id = e.ref->>'conversation_id' and m.message_id = e.ref->>'message_id'
+       and m.current_version = (e.ref->>'version')::int and m.deleted_at is null
+  join conversations c on c.id = m.conversation_id and c.team_id is not null and c.conversation_type = 'channel'
+  join teams t on t.id = c.team_id and t.removed_at is null
+  left join channels ch on ch.id = m.conversation_id
+  where e.kind = 'message' and e.model = $2 and ($3::text is null or c.team_id = $3)
+    and coalesce(ch.membership_type, 'standard') = 'standard'
+  union all
+  select 'doc_chunk', e.ref, d.team_id, k.text, 1 - (e.embedding <=> $1::text::vector)
+  from embeddings e
+  join doc_chunks k on k.id = (e.ref->>'chunk_id')::bigint
+  join documents d on d.id = k.document_id and d.deleted_at is null
+  join teams t on t.id = d.team_id and t.removed_at is null
+  where e.kind = 'doc_chunk' and e.model = $2 and ($3::text is null or d.team_id = $3)
+) s order by score desc limit $4"""

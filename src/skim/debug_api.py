@@ -6,6 +6,7 @@ import json
 
 from aiohttp import web
 
+from .ai.providers.base import ProviderError
 from .storage.base import Storage
 
 
@@ -108,18 +109,40 @@ def register(app: web.Application, storage: Storage, token: str, ai=None) -> Non
         rows = await storage.list_message_analyses(request.match_info["conversation_id"], request.match_info["message_id"])
         return _json(rows) if rows else web.json_response({"error": "not found"}, status=404)
 
+    async def search(request: web.Request):
+        emb = ai.embedder if ai else None
+        q = (request.query.get("q") or "").strip()
+        if emb is None or not emb.usable:
+            return web.json_response({"error": "embeddings are not available"}, status=503)
+        if not q or len(q) > 500:
+            return web.json_response({"error": "q is required (max 500 characters)"}, status=400)
+        try:
+            k = max(1, min(int(request.query.get("k", 10)), 50))
+        except ValueError:
+            k = 10
+        try:
+            vec = await emb.embed_query(q)  # the query is redacted before it leaves the process
+        except ProviderError as e:
+            return web.json_response({"error": f"embedding provider failed ({e.kind})"}, status=502)
+        return _json({"model": emb.model, "hits": await storage.search_embeddings(
+            vec, emb.model, request.query.get("team_id") or None, k)})
+
     async def ai_status(request: web.Request):
         cfg = ai.cfg if ai else None
         status = await storage.ai_status(cfg.prompt_version if cfg else "", cfg.max_attempts if cfg else 3)
         runs = [r for r in await storage.latest_job_runs() if str(r.get("job", "")).startswith(("ai-", "run-all"))]
         return _json({"enabled": ai is not None, "prompt_version": cfg.prompt_version if cfg else None,
                       "models": {"groq": cfg.groq_model, "gemini": cfg.gemini_model} if cfg else None,
+                      "embeddings": {"model": ai.embedder.model, "stored": await storage.count_embeddings(ai.embedder.model),
+                                     "pending": len(await storage.list_unembedded(ai.embedder.model, 1001))}
+                      if ai and ai.embedder else None,
                       "last_runs": runs, **status})
 
     app.router.add_get("/debug/events", events)
     app.router.add_get("/debug/events/{id}", event)
     app.router.add_get("/debug/message-ai/{conversation_id}/{message_id}", message_ai)
     app.router.add_get("/debug/ai-status", ai_status)
+    app.router.add_get("/debug/search", search)
     app.router.add_get("/debug/channels", channels)
     app.router.add_get("/debug/documents", documents)
     app.router.add_get("/debug/documents/{id}", document)

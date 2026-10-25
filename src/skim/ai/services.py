@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .config import AIConfig
+from .embeddings import Embedder
 from .pipeline import Pipeline
 from .providers.gemini import GeminiProvider
 from .providers.groq import GroqProvider
@@ -20,6 +21,7 @@ class AIServices:
     cfg: AIConfig
     router: Router
     pipeline: Pipeline
+    embedder: Embedder | None = None
 
     @classmethod
     def build(cls, cfg: AIConfig, storage: Any, providers: list | None = None) -> "AIServices":
@@ -29,7 +31,11 @@ class AIServices:
                 providers.append(NimProvider(cfg.nim_api_key, cfg.nim_model))
         router = Router(providers, min_interval=cfg.min_call_interval, max_retry_after=cfg.max_retry_after,
                         rate_retries=cfg.rate_retries)
-        return cls(cfg, router, Pipeline(storage, router, cfg))
+        gem = next((p for p in providers if hasattr(p, "embed")), None)  # embeddings are Gemini-only (P3-D-003)
+        embedder = Embedder(gem, cfg.embed_model, cfg.embed_dims, interval=cfg.min_call_interval) if gem else None
+        if embedder is not None and not embedder.usable:
+            log.warning("embeddings off: EMBED_DIMS must be 768 (migration 005 vector(768))")
+        return cls(cfg, router, Pipeline(storage, router, cfg), embedder)
 
     @classmethod
     def from_env(cls, storage: Any, env: Mapping[str, str] | None = None) -> "AIServices | None":

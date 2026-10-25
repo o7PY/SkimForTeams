@@ -19,7 +19,7 @@ DEBUG = {"Authorization": "Bearer dbg"}
 QUIZ = extraction("event", [item("create", "quiz", "Quiz 1", {"kind": "absolute", "date": "2026-10-23", "text": "23 Oct"})])
 
 
-async def make(script, ai_on=True, cfg=CFG):
+async def make(script, ai_on=True, cfg=CFG, extra_providers=()):
     store = MemoryStorage()
     await store.upsert_team({"id": TEAM, "aad_group_id": GID})
     await store.mark_team_installed(TEAM, "code", "prof-aad", ist("2026-10-01 10:00"))
@@ -33,7 +33,7 @@ async def make(script, ai_on=True, cfg=CFG):
     base = await ctx.__aenter__()
     graph = GraphClient(StaticTokenProvider(), base_url=base, sleep=lambda s: asyncio.sleep(0))
     provider = ScriptedProvider(script)
-    ai = AIServices.build(cfg, store, providers=[provider]) if ai_on else None
+    ai = AIServices.build(cfg, store, providers=[provider, *extra_providers]) if ai_on else None
     settings = Settings.from_env({**ENV, "JOBS_TOKEN": "jobs-secret", "DEBUG_TOKEN": "dbg"})
     client = TestClient(TestServer(create_app(settings, store, graph=graph, ai=ai)))
     await client.start_server()

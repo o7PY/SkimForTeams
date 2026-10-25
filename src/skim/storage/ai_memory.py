@@ -16,6 +16,7 @@ class MemoryAIMixin:
         self.message_event_links: dict[tuple, dict] = {}
         self._event_seq = 0
         self.document_texts: dict[int, dict] = {}
+        self.embeddings: dict[int, dict] = {}
         self.doc_chunks: dict[int, list[dict]] = {}
 
     async def list_pending_messages(self, prompt_version: str, max_attempts: int, limit: int) -> list[dict]:
@@ -159,7 +160,74 @@ class MemoryAIMixin:
         self.document_texts[document_id] = {"document_id": document_id, "ctag": ctag, "status": status, "reason": reason,
                                             "page_count": page_count, "char_count": char_count,
                                             "extracted_at": datetime.now(timezone.utc)}
-        self.doc_chunks[document_id] = [{"document_id": document_id, "ctag": ctag, **c} for c in chunks]
+        self._chunk_seq = getattr(self, "_chunk_seq", 0)
+        self.embeddings = {i: e for i, e in self.embeddings.items()
+                           if not (e["kind"] == "doc_chunk" and e["ref"]["document_id"] == document_id)}
+        new = []
+        for c in chunks:
+            self._chunk_seq += 1
+            new.append({"id": self._chunk_seq, "document_id": document_id, "ctag": ctag, **c})
+        self.doc_chunks[document_id] = new
 
     async def list_doc_chunks(self, document_id: int) -> list[dict]:
         return [dict(c) for c in self.doc_chunks.get(document_id, [])]
+
+    # ---- embeddings (FR-307)
+    async def list_unembedded(self, model: str, limit: int) -> list[dict]:
+        """Current, live messages and current doc chunks without an embedding for `model` (messages first, oldest first)."""
+        have = {e["ref_key"] for e in self.embeddings.values()} if hasattr(self, "embeddings") else set()
+        out = []
+        for m in await self.list_pending_messages("\0none", 10**9, 10**9):  # every live channel message (no analysis filter)
+            if f"msg:{m['conversation_id']}:{m['message_id']}:v{m['version']}:{model}" not in have:
+                out.append({**m, "item": "message"})
+        for did, chunks in self.doc_chunks.items():
+            d, t = self.documents.get(did), self.document_texts.get(did)
+            team = self.teams.get((d or {}).get("team_id") or "")
+            if not d or d["deleted_at"] is not None or not team or team.get("removed_at") or not t or t["status"] != "ok":
+                continue
+            for c in chunks:
+                if c["ctag"] == t["ctag"] and f"chunk:{c.get('id', (did, c['chunk_index']))}:{model}" not in have:
+                    out.append({**c, "id": c.get("id", (did, c["chunk_index"])), "item": "doc_chunk", "team_id": d["team_id"],
+                                "created_by_name": d.get("created_by_name"), "modified_by_name": d.get("modified_by_name")})
+        return out[:limit]
+
+    async def save_embeddings(self, rows: list[dict]) -> int:
+        """rows: kind, ref, ref_key (without model), model, dims, embedding, team_id. Idempotent by ref_key+model."""
+        n = 0
+        for r in rows:
+            key = f"{r['ref_key']}:{r['model']}"
+            if key not in {e["ref_key"] for e in self.embeddings.values()}:
+                self.embeddings[len(self.embeddings) + 1] = {**r, "ref_key": key}
+                n += 1
+        return n
+
+    async def search_embeddings(self, vector: list[float], model: str, team_id: str | None, k: int) -> list[dict]:
+        import math
+
+        def cos(a, b):
+            na, nb = math.sqrt(sum(x * x for x in a)), math.sqrt(sum(x * x for x in b))
+            return sum(x * y for x, y in zip(a, b)) / (na * nb) if na and nb else 0.0
+
+        live_msgs = {(m["conversation_id"], m["message_id"]): m for m in await self.list_pending_messages("\0none", 10**9, 10**9)}
+        hits = []
+        for e in self.embeddings.values():
+            if e["model"] != model or (team_id and e.get("team_id") != team_id):
+                continue
+            if e["kind"] == "message":
+                m = live_msgs.get((e["ref"]["conversation_id"], e["ref"]["message_id"]))
+                if not m or m["version"] != e["ref"]["version"]:
+                    continue  # edited (stale vector), deleted, or no longer a live channel message
+                snippet = (m.get("subject") + "\n" if m.get("subject") else "") + (m.get("text") or "")
+            else:
+                chunks = self.doc_chunks.get(e["ref"]["document_id"], [])
+                c = next((c for c in chunks if c["chunk_index"] == e["ref"]["chunk_index"]), None)
+                d = self.documents.get(e["ref"]["document_id"])
+                if not c or not d or d["deleted_at"] is not None:
+                    continue
+                snippet = c["text"]
+            hits.append({"kind": e["kind"], "ref": e["ref"], "team_id": e.get("team_id"), "score": round(cos(vector, e["embedding"]), 4),
+                         "snippet": snippet[:300]})
+        return sorted(hits, key=lambda h: -h["score"])[:k]
+
+    async def count_embeddings(self, model: str) -> int:
+        return sum(1 for e in self.embeddings.values() if e["model"] == model)
