@@ -44,3 +44,17 @@ def test_strict_schema_is_closed_and_complete():
         elif isinstance(n, list):
             [walk(v) for v in n]
     walk(s)
+
+
+def test_strict_schema_keeps_every_model_field():
+    """Regression (first real eval): the schema cleaner dropped the field named 'title', so strict mode forbade it."""
+    from skim.ai.schemas import Item, MessageExtraction, When, Relative, strict_json_schema
+
+    schema = strict_json_schema(MessageExtraction)
+    item = schema["properties"]["items"]["items"]
+    when = item["properties"]["when"]
+    rel = when["properties"]["relative"]
+    for node, model in ((schema, MessageExtraction), (item, Item), (when, When), (rel, Relative)):
+        assert set(node["properties"]) == set(model.model_fields)
+        assert set(node["required"]) == set(model.model_fields)
+    assert "title" in item["properties"]

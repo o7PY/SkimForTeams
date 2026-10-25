@@ -82,7 +82,9 @@ def strict_json_schema(model: type[BaseModel]) -> dict:
             return node
         if "$ref" in node:
             return conv(copy.deepcopy(defs[node["$ref"].split("/")[-1]]))
-        node = {k: conv(v) for k, v in node.items() if k not in ("title", "default", "pattern")}
+        # Drop pydantic's schema-level title/default/pattern, but never a FIELD that happens to be called "title".
+        node = {k: ({n: conv(sub) for n, sub in v.items()} if k == "properties" else conv(v))
+                for k, v in node.items() if k not in ("title", "default", "pattern")}
         if "anyOf" in node:
             non_null = [x for x in node["anyOf"] if x.get("type") != "null"]
             if len(non_null) == 1 and len(node["anyOf"]) == 2:
