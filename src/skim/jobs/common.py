@@ -34,6 +34,7 @@ class JobContext:
     stats: Counter = field(default_factory=Counter)
     clock: Callable[[], datetime] = utcnow
     options: dict = field(default_factory=dict)  # since_days, max_messages, force_backfill
+    ai: Any = None  # AIServices when Phase 3 is on (P3-D-018), else None
 
 
 async def store_raw(storage: Storage, kind: str, endpoint: str, item_key: str | None, payload: Any) -> int:

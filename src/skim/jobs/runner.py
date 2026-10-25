@@ -14,6 +14,7 @@ from ..graph.auth import GraphAuthError
 from ..graph.client import GraphClient, GraphError
 from ..storage.base import Storage
 from .common import Budget, JobContext
+from .ai_process import ai_process
 from .enrich import enrich_team
 from .refill import refill_empty
 from .backfill import backfill_team, state_key
@@ -138,29 +139,68 @@ async def step_link_attachments(ctx: JobContext, team_id: str | None) -> str:
     return "ok"
 
 
-EXTRA_RUN_ALL_STEPS: list[Step] = [step_fix_text, step_backfill_initial, step_enrich_messages, step_refill_empty, step_link_attachments]
+async def step_ai_process(ctx: JobContext, team_id: str | None) -> str:
+    if ctx.ai is None:
+        ctx.stats["ai_disabled"] += 1
+        return "ok"
+    return await ai_process(ctx, team_id)
+
+
+async def step_ai_reprocess(ctx: JobContext, team_id: str | None) -> str:
+    """Re-run messages under another prompt version; old analyses stay and events are NOT touched (a replay of old
+    messages would otherwise undo later changes)."""
+    pv = ctx.options.get("prompt_version")
+    if ctx.ai is None or not pv:
+        ctx.stats["ai_disabled" if ctx.ai is None else "ai_missing_prompt_version"] += 1
+        return "ok"
+    from dataclasses import replace
+    pipeline = replace(ctx.ai.pipeline, prompt_version=pv)
+    return await ai_process(ctx, team_id, pipeline=pipeline, apply_events=False)
+
+
+async def step_ai_all(ctx: JobContext, team_id: str | None) -> str:
+    """Phase 3 inside run-all (P3-D-017/018). Nothing at all happens when AI is off. An AI failure never
+    undoes or hides the Phase 2 steps that already ran."""
+    if ctx.ai is None:
+        return "ok"
+    results = []
+    for step in AI_STEPS:
+        try:
+            results.append(await step(ctx, team_id))
+        except Exception as e:
+            log.exception("ai step failed")
+            ctx.stats["ai_step_errors"] += 1
+            ctx.stats[f"ai_step_error_{type(e).__name__}"] += 1
+            results.append("partial")
+    return "partial" if "partial" in results else "ok"
+
+
+AI_STEPS: list[Step] = [step_ai_process]
+EXTRA_RUN_ALL_STEPS: list[Step] = [step_fix_text, step_backfill_initial, step_enrich_messages, step_refill_empty, step_link_attachments, step_ai_all]
 STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_files, "backfill": step_backfill,
                           "fix-text": step_fix_text,
                           "enrich-messages": step_enrich_messages,
                           "refill-empty": step_refill_empty,
-                          "link-attachments": step_link_attachments, "run-all": step_run_all}
+                          "link-attachments": step_link_attachments, "ai-process": step_ai_process,
+                          "ai-reprocess": step_ai_reprocess, "run-all": step_run_all}
 
 
 # ---------------------------------------------------------------------------- runner
 class JobRunner:
     def __init__(self, storage: Storage, graph: GraphClient, budget_seconds: float,
                  clock: Callable[[], float] = time.monotonic, backfill_since_days: int = 180,
-                 backfill_max_messages: int = 2000):
+                 backfill_max_messages: int = 2000, ai=None):
         self.storage, self.graph, self.budget_seconds, self._clock = storage, graph, budget_seconds, clock
         self.backfill_since_days, self.backfill_max_messages = backfill_since_days, backfill_max_messages
+        self.ai = ai
 
     async def run(self, job: str, team_id: str | None = None, since_days: int | None = None,
-                  force: bool = False) -> dict:
+                  force: bool = False, prompt_version: str | None = None) -> dict:
         """Never raises: a failure becomes {status:"error", job_run_id, error_class} (and a failed job_runs row
         when the database still allows one) instead of a bare 500."""
         started = self._clock()
         try:
-            result = await self._run(job, team_id, started, since_days, force)
+            result = await self._run(job, team_id, started, since_days, force, prompt_version)
         except Exception as e:  # infrastructure failure (lock table missing, DB down, ...): not a step failure
             log.exception("job %s could not run", job)
             result = {"status": "error", "job_run_id": None, "stats": {}, "next": False,
@@ -178,7 +218,7 @@ class JobRunner:
             return None
 
     async def _run(self, job: str, team_id: str | None, started: float, since_days: int | None,
-                   force: bool = False) -> dict:
+                   force: bool = False, prompt_version: str | None = None) -> dict:
         step = STEPS[job]
         async with self.storage.job_lock(LOCK, self.budget_seconds + LEASE_MARGIN_SECONDS) as got:
             run_id = await self.storage.start_job_run(job)
@@ -187,7 +227,8 @@ class JobRunner:
                 return {"status": "busy", "job_run_id": run_id, "stats": {}, "next": False}
             ctx = JobContext(self.storage, self.graph, Budget(self.budget_seconds, self._clock),
                              options={"since_days": since_days or self.backfill_since_days,
-                                      "max_messages": self.backfill_max_messages, "force": force})
+                                      "max_messages": self.backfill_max_messages, "force": force,
+                                      "prompt_version": prompt_version}, ai=self.ai)
             before = dict(self.graph.stats)
             error: str | None = None
             error_class: str | None = None

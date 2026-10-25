@@ -54,3 +54,10 @@ async def store(request):
     else:
         async for s in _pg_store():
             yield s
+
+
+@pytest.fixture(autouse=True)
+def _no_ai_from_the_developers_environment(monkeypatch):
+    """Tests never reach a real LLM, whatever keys the developer has exported."""
+    for name in ("AI_ENABLED", "GROQ_API_KEY", "GROQ_MODEL", "GEMINI_API_KEY", "GEMINI_MODEL", "PROMPT_VERSION"):
+        monkeypatch.delenv(name, raising=False)

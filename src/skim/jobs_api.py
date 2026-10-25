@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 
 from aiohttp import web
 
@@ -19,8 +20,11 @@ def register(app: web.Application, runner: JobRunner, token: str) -> None:
             since = request.query.get("since_days")
             if since is not None and not (since.isdigit() and int(since) > 0):
                 return web.json_response({"error": "since_days must be a positive integer"}, status=400)
+            pv = request.query.get("prompt_version")
+            if job == "ai-reprocess" and not (pv and re.fullmatch(r"[A-Za-z0-9._-]{1,40}", pv)):
+                return web.json_response({"error": "prompt_version is required (letters, digits, . _ -)"}, status=400)
             result = await runner.run(job, request.query.get("team_id") or None, int(since) if since else None,
-                                      request.query.get("force", "").lower() in ("1", "true", "yes"))
+                                      request.query.get("force", "").lower() in ("1", "true", "yes"), pv)
             return web.json_response(result, status=500 if result["status"] == "error" else 200)  # JSON either way
         return handler
 

@@ -307,3 +307,17 @@ async def test_no_person_name_or_contact_detail_reaches_the_provider():
         assert leak not in sent
     (a,) = await h.store.list_message_analyses(CONV, "m1")
     assert "Menon" not in str(a["output"])
+
+
+async def test_candidate_titles_and_venues_are_redacted_in_the_tiebreak_prompt():
+    script = {"Lab with [PERSON_1] at Room 9 on 21 Oct": extraction("event", [item("create", "lab", "Lab Alpha with Asha Rao", ABS("2026-10-21"), venue="Room 9")]),
+              "Lab with [PERSON_1] at Room 9 on 22 Oct": extraction("event", [item("create", "lab", "Lab Beta with Asha Rao", ABS("2026-10-22"))]),
+              "The lab is moved": extraction("change", [item("reschedule", "lab", "the lab", ABS("2026-10-30"))]),
+              "__tiebreak__": "new"}
+    h = await Harness(script).setup()
+    await h.post("2026-10-10 11:00", "Lab with Asha Rao at Room 9 on 21 Oct", name="Asha Rao")
+    await h.post("2026-10-10 11:05", "Lab with Asha Rao at Room 9 on 22 Oct", name="Asha Rao")
+    await h.post("2026-10-15 11:05", "The lab is moved", name="Asha Rao")
+    await h.run()
+    (tb,) = [c for c in h.provider.calls if "<candidates>" in c["user"]]
+    assert "Asha" not in tb["user"] and "Rao" not in tb["user"] and "Room 9" not in tb["user"]

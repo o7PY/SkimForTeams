@@ -97,9 +97,11 @@ def _snapshot(e: dict) -> dict:
             "venue": e.get("venue"), "status": e["status"], "title": e["title"]}
 
 
-def _fmt_event(e: dict) -> str:
+def _fmt_event(e: dict, red: Redactor) -> str:
+    """One candidate line for the tie-break prompt. Free text (the title) goes through the message's redactor so author and
+    mentioned names never leak; the venue is not needed to tell events apart and is left out."""
     s = _snapshot(e)
-    return f"{e['id']} | {e['type']} | {e['title']} | {s['date'] or 'no date'} {s['time'] or ''} | {s['venue'] or '-'} | {e['status']}"
+    return f"{e['id']} | {e['type']} | {red.redact(e['title'])} | {s['date'] or 'no date'} {s['time'] or ''} | {e['status']}"
 
 
 @dataclass
@@ -116,7 +118,7 @@ class Pipeline:
         self._system = load("classify_extract")
 
     # ---------------------------------------------------------------- public
-    async def process(self, msg: dict) -> Outcome:
+    async def process(self, msg: dict, apply_events: bool = True) -> Outcome:
         cid, mid, version = msg["conversation_id"], msg["message_id"], msg["version"]
         role = author_role(msg, self.cfg)
         posted, _ = _posted(msg, self.clock())
@@ -137,8 +139,8 @@ class Pipeline:
                     "provider": comp.provider, "model": comp.model, "output": ex.model_dump()}
         out = Outcome("ok", ex.category, role)
         items = ex.items if ex.category in ("event", "change") else []
-        if role == "student":  # P3-D-019: classified, never acted on
-            out.ignored_items = len(items)
+        if role == "student" or not apply_events:  # P3-D-019: students never act; re-processing only records analysis
+            out.ignored_items = len(items) if role == "student" else 0
             await self.storage.commit_message_analysis(analysis, [], source)
             return out
 
@@ -206,7 +208,7 @@ class Pipeline:
             when = f"{guess.event_date or 'no date'} {guess.time.strftime('%H:%M') if guess.time else ''}".strip()
             user = (f"<item>type: {item.type}; title: {red.redact(title)}; hint: {red.redact(item.reference_hint or '-')}; "
                     f"action: {item.action}; new date: {when}</item>\n<candidates>\n"
-                    + "\n".join(_fmt_event({**e, "title": Redactor().redact(e["title"])}) for e in pool) + "\n</candidates>")
+                    + "\n".join(_fmt_event(e, red) for e in pool) + "\n</candidates>")
             comp = await self.router.complete(ResolveChoice, load("resolve"), user)
             return None if comp.value.match == "new" else comp.value.match
         return ask

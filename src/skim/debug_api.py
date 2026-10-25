@@ -35,7 +35,7 @@ def redact_state(row: dict) -> dict:
             "updated_at": row.get("updated_at"), "has_delta_link": bool(row.get("delta_link")), "cursor": summary}
 
 
-def register(app: web.Application, storage: Storage, token: str) -> None:
+def register(app: web.Application, storage: Storage, token: str, ai=None) -> None:
     @web.middleware
     async def auth(request: web.Request, handler):
         if request.path.startswith("/debug"):
@@ -90,6 +90,36 @@ def register(app: web.Application, storage: Storage, token: str) -> None:
             "teams": [{k: t.get(k) for k in ("id", "name", "needs_initial_sync", "last_discovered_at",
                                               "last_files_sync_at", "last_backfill_at", "removed_at")} for t in teams]})
 
+    def _int_or_none(v: str | None):
+        return int(v) if v and v.lstrip("-").isdigit() else None
+
+    async def events(request: web.Request):
+        nr = request.query.get("needs_review")
+        return _json(await storage.list_events(
+            request.query.get("team_id") or None, request.query.get("status") or None, request.query.get("type") or None,
+            None if nr is None else nr.lower() in ("1", "true", "yes"), _limit(request, 100)))
+
+    async def event(request: web.Request):
+        eid = _int_or_none(request.match_info["id"])
+        found = await storage.get_event(eid) if eid is not None else None
+        return _json(found) if found else web.json_response({"error": "not found"}, status=404)
+
+    async def message_ai(request: web.Request):
+        rows = await storage.list_message_analyses(request.match_info["conversation_id"], request.match_info["message_id"])
+        return _json(rows) if rows else web.json_response({"error": "not found"}, status=404)
+
+    async def ai_status(request: web.Request):
+        cfg = ai.cfg if ai else None
+        status = await storage.ai_status(cfg.prompt_version if cfg else "", cfg.max_attempts if cfg else 3)
+        runs = [r for r in await storage.latest_job_runs() if str(r.get("job", "")).startswith(("ai-", "run-all"))]
+        return _json({"enabled": ai is not None, "prompt_version": cfg.prompt_version if cfg else None,
+                      "models": {"groq": cfg.groq_model, "gemini": cfg.gemini_model} if cfg else None,
+                      "last_runs": runs, **status})
+
+    app.router.add_get("/debug/events", events)
+    app.router.add_get("/debug/events/{id}", event)
+    app.router.add_get("/debug/message-ai/{conversation_id}/{message_id}", message_ai)
+    app.router.add_get("/debug/ai-status", ai_status)
     app.router.add_get("/debug/channels", channels)
     app.router.add_get("/debug/documents", documents)
     app.router.add_get("/debug/documents/{id}", document)

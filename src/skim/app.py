@@ -13,6 +13,7 @@ from .config import Settings
 from .schema import schema_status
 from .graph.auth import MsalTokenProvider
 from .graph.client import GraphClient
+from .ai.services import AIServices
 from .jobs.runner import JobRunner
 from .normalize import is_non_standard_channel
 from .storage.base import Storage
@@ -30,12 +31,14 @@ def make_storage(settings: Settings) -> Storage:
 
 
 def create_app(settings: Settings, storage: Storage | None = None, sender: Sender | None = None,
-               graph: GraphClient | None = None) -> web.Application:
+               graph: GraphClient | None = None, ai: "AIServices | None | str" = "auto") -> web.Application:
     setup_activity_logger()
     storage = storage or make_storage(settings)
     connections = MsalConnectionManager(**settings.sdk_config)
     adapter = CloudAdapter(connection_manager=connections)
     agent = build_agent(settings, storage, connections, sender)
+    if ai == "auto":  # Phase 3 (P3-D-018): off, with one log line, unless AI_ENABLED and all keys/models are set
+        ai = AIServices.from_env(storage)
 
     @jwt_authorization_decorator  # JWT is checked on this route only; /health and /debug have their own rules
     async def messages(request: web.Request) -> web.Response:
@@ -72,7 +75,7 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
     app.router.add_post("/api/messages", messages)
     app.router.add_get("/health", health)
     if settings.debug_token:
-        debug_api.register(app, storage, settings.debug_token)
+        debug_api.register(app, storage, settings.debug_token, ai)
 
     own_graph = False
     if settings.jobs_token and graph is None and settings.graph_credentials:
@@ -82,7 +85,7 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
     if settings.jobs_token and graph is not None:
         jobs_api.register(app, JobRunner(storage, graph, settings.job_time_budget_seconds,
                                   backfill_since_days=settings.backfill_since_days,
-                                  backfill_max_messages=settings.backfill_max_messages_per_channel), settings.jobs_token)
+                                  backfill_max_messages=settings.backfill_max_messages_per_channel, ai=ai), settings.jobs_token)
     else:
         log.info("Phase 2 jobs disabled: %s", "JOBS_TOKEN is not set" if not settings.jobs_token
                  else "no Graph credentials")
@@ -99,6 +102,8 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
     async def on_cleanup(_: web.Application) -> None:
         if own_graph and graph is not None:
             await graph.close()
+        if ai is not None:
+            await ai.close()
         await storage.close()
 
     app.on_startup.append(on_startup)
