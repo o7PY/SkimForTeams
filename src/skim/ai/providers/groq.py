@@ -56,7 +56,7 @@ class GroqProvider:
                     if r.status == 400 and self._schema_mode and attempt == 1 and "schema" in json.dumps(data).lower():
                         self._schema_mode = False  # e.g. "does not support response format json_schema"
                         log.warning(json.dumps({"event": "ai_schema_mode_off", "provider": "groq", "model": self.model,
-                                                "detail": str((data.get("error") or {}).get("message", ""))[:200]}))
+                                                "error_code": str((data.get("error") or {}).get("code") or (data.get("error") or {}).get("type") or "")[:60]}))
                         continue
                     if r.status >= 400:
                         hint = ((data or {}).get("error") or {}).get("code") or ""
