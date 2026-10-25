@@ -3,7 +3,7 @@ with NIM as the ONLY provider (so every answer in the scorecard is NIM's; no fal
 
     set -a; . ./.env; set +a
     export NIM_API_KEY=nvapi-...   NIM_MODEL=meta/llama-3.3-70b-instruct     # any chat model from build.nvidia.com
-    python scripts/eval_nim.py [--interval 3] [--note "text"] [--smoke-only | --list-models]
+    python scripts/eval_nim.py [--interval 3] [--note "text"] [--smoke-only | --list-models | --probe [ids]]
 
 Appends to Bookkeeping/PHASE3_EVAL.md like run_eval.py. Uses synthetic eval text only; the key is never printed.
 """
@@ -58,7 +58,33 @@ async def list_models(key: str) -> int:
     return 0
 
 
+DEFAULT_CANDIDATES = ("openai/gpt-oss-20b,nvidia/nemotron-3-super-120b-a12b,mistralai/mistral-large-2-instruct,"
+                      "deepseek-ai/deepseek-v4.1-flash,moonshotai/kimi-k2.6,z-ai/glm-5.3-flash,nvidia/nemotron-nano-3-30b-a3b,"
+                      "google/gemma-4-31b-it")
+
+
+async def probe(key: str, models: list[str]) -> int:
+    """Smoke-test each model id in turn; print which ones answer with valid structured output."""
+    ok = []
+    for m in models:
+        print(f"--- {m}")
+        if await smoke(key, m):
+            ok.append(m)
+    print("\nworking:", ", ".join(ok) if ok else "none")
+    if ok:
+        print(f"next: export NIM_MODEL={ok[0]}; python scripts/eval_nim.py")
+    return 0 if ok else 1
+
+
 async def main() -> int:
+    if "--probe" in sys.argv:  # --probe [comma,list,of,model,ids]
+        k = os.environ.get("NIM_API_KEY")
+        if not k:
+            print("Set NIM_API_KEY first.", file=sys.stderr)
+            return 2
+        i = sys.argv.index("--probe")
+        raw = sys.argv[i + 1] if len(sys.argv) > i + 1 and not sys.argv[i + 1].startswith("--") else DEFAULT_CANDIDATES
+        return await probe(k, [x.strip() for x in raw.split(",") if x.strip()])
     if "--list-models" in sys.argv:
         k = os.environ.get("NIM_API_KEY")
         if not k:
