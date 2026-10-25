@@ -1,0 +1,56 @@
+{
+  "attachments": [
+    {
+      "content": "[text:99 chars]",
+      "contentType": "text/html"
+    }
+  ],
+  "channelData": {
+    "channel": {
+      "id": "id-9a1eaf6f"
+    },
+    "team": {
+      "aadGroupId": "id-46b274bb",
+      "id": "id-9a1eaf6f"
+    },
+    "teamsChannelId": "id-9a1eaf6f",
+    "teamsTeamId": "id-9a1eaf6f",
+    "tenant": {
+      "id": "id-ddf09329"
+    }
+  },
+  "channelId": "msteams",
+  "conversation": {
+    "conversationType": "channel",
+    "id": "id-9b575f54",
+    "isGroup": true,
+    "tenantId": "id-ddf09329"
+  },
+  "entities": [
+    {
+      "country": "US",
+      "locale": "en-US",
+      "platform": "Web",
+      "timezone": "Asia/Calcutta",
+      "type": "clientInfo"
+    }
+  ],
+  "from": {
+    "aadObjectId": "id-d818dfe7",
+    "id": "id-c7fc22f3",
+    "name": "[text:13 chars]"
+  },
+  "id": "id-84d9c4b8",
+  "localTimestamp": "2026-10-25T16:21:07.1667105+05:30",
+  "localTimezone": "Asia/Calcutta",
+  "locale": "en-US",
+  "recipient": {
+    "id": "id-ce63d092",
+    "name": "[text:4 chars]"
+  },
+  "serviceUrl": "https://example.invalid/ebe9714604",
+  "text": "[text:73 chars]",
+  "textFormat": "plain",
+  "timestamp": "2026-10-25T10:51:07.1667105Z",
+  "type": "message"
+}

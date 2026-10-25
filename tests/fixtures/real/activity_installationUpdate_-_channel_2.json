@@ -1,0 +1,50 @@
+{
+  "action": "remove",
+  "channelData": {
+    "channel": {
+      "id": "id-9a1eaf6f"
+    },
+    "settings": {
+      "selectedChannel": {
+        "id": "id-9a1eaf6f"
+      }
+    },
+    "source": {
+      "name": "[text:7 chars]"
+    },
+    "team": {
+      "aadGroupId": "id-46b274bb",
+      "id": "id-9a1eaf6f",
+      "name": "[text:14 chars]"
+    },
+    "tenant": {
+      "id": "id-ddf09329"
+    }
+  },
+  "channelId": "msteams",
+  "conversation": {
+    "conversationType": "channel",
+    "id": "id-9a1eaf6f",
+    "isGroup": true,
+    "tenantId": "id-ddf09329"
+  },
+  "entities": [
+    {
+      "locale": "en-US",
+      "type": "clientInfo"
+    }
+  ],
+  "from": {
+    "aadObjectId": "id-d818dfe7",
+    "id": "id-c7fc22f3"
+  },
+  "id": "f:id-800f27ec",
+  "locale": "en-US",
+  "recipient": {
+    "id": "id-ce63d092",
+    "name": "[text:4 chars]"
+  },
+  "serviceUrl": "https://example.invalid/ebe9714604",
+  "timestamp": "2026-10-21T21:23:21.587Z",
+  "type": "installationUpdate"
+}

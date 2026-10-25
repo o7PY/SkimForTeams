@@ -15,6 +15,8 @@ from xml.etree import ElementTree as ET
 
 import aiohttp
 
+from ..textclean import clean_text
+
 log = logging.getLogger("skim.ai")
 EXTENSIONS = ("pdf", "docx", "pptx")
 _ID = re.compile(r"[A-Za-z0-9!_.\-=$]{1,200}")  # Graph drive/item ids; nothing that could alter the URL path
@@ -101,16 +103,20 @@ def extract(name: str | None, data: bytes, max_pages: int) -> Extracted:
     ext = extension(name)
     try:
         if ext == "pdf":
-            return _pdf(data, max_pages)
+            return _clean(_pdf(data, max_pages))
         if ext == "docx":
-            return _docx(data)
+            return _clean(_docx(data))
         if ext == "pptx":
-            return _pptx(data, max_pages)
+            return _clean(_pptx(data, max_pages))
     except DocumentSkip:
         raise
     except Exception as e:  # corrupt files raise all sorts of things; only the class name is kept
         raise DocumentSkip("failed", f"unreadable_{type(e).__name__}"[:60]) from None
     raise DocumentSkip("skipped", "unsupported_type")
+
+
+def _clean(x: Extracted) -> Extracted:
+    return Extracted([clean_text(p) for p in x.pages], x.page_count)  # NUL / lone surrogates would break the database
 
 
 def _pdf(data: bytes, max_pages: int) -> Extracted:

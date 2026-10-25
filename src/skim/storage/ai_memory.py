@@ -8,6 +8,22 @@ EVENT_FIELDS = {"type", "title", "is_deadline", "starts_at", "ends_at", "event_d
                 "venue", "details", "status", "confidence", "needs_review"}
 
 
+class CharacterNotInRepertoireError(ValueError):
+    """What Postgres raises for NUL; the in-memory store raises it too so tests cannot pass with unclean text."""
+
+
+def _reject_nul(o) -> None:
+    if isinstance(o, str):
+        if "\x00" in o or any("\ud800" <= c <= "\udfff" for c in o):
+            raise CharacterNotInRepertoireError("invalid byte sequence for encoding UTF8")
+    elif isinstance(o, dict):
+        for k, v in o.items():
+            _reject_nul(k), _reject_nul(v)
+    elif isinstance(o, (list, tuple)):
+        for v in o:
+            _reject_nul(v)
+
+
 class MemoryAIMixin:
     def _init_ai(self) -> None:
         self.analyses: dict[tuple, dict] = {}
@@ -58,6 +74,7 @@ class MemoryAIMixin:
         return [dict(v) for k, v in self.message_event_links.items() if k[:2] == (conversation_id, message_id)]
 
     async def commit_message_analysis(self, analysis: dict, ops: list[dict], source: dict) -> list[dict]:
+        _reject_nul([analysis, ops, source])
         if analysis is not None:  # None for document-sourced events (no message to analyse)
             key = (analysis["conversation_id"], analysis["message_id"], analysis["message_version"], analysis["prompt_version"])
             prev = self.analyses.get(key)
@@ -158,6 +175,7 @@ class MemoryAIMixin:
     async def save_document_text(self, document_id: int, ctag, status: str, reason, page_count, char_count,
                                  chunks: list[dict]) -> None:
         """Replace the document's text rows (older ctags' chunks go away)."""
+        _reject_nul([reason, chunks])
         self.document_texts[document_id] = {"document_id": document_id, "ctag": ctag, "status": status, "reason": reason,
                                             "page_count": page_count, "char_count": char_count,
                                             "extracted_at": datetime.now(timezone.utc)}

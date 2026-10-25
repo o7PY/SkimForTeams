@@ -13,6 +13,7 @@ from typing import Awaitable, Callable, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from ..schemas import strict_json_schema
+from ...textclean import clean_json
 from .base import LLMProvider, ProviderError
 
 log = logging.getLogger("skim.ai")
@@ -118,6 +119,6 @@ def _parse(model_cls: type[T], text: str) -> T:
     if 0 < a or (a == 0 and b < len(text.strip()) - 1):
         text = text[a:b + 1] if a >= 0 and b > a else text  # tolerate ```json fences / chatter around the object
     try:
-        return model_cls.model_validate(json.loads(text))
+        return model_cls.model_validate(clean_json(json.loads(text)))
     except (json.JSONDecodeError, ValidationError) as e:
         raise ValueError(str(e)[:400]) from None

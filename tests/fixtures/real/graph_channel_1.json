@@ -1,0 +1,13 @@
+{
+  "createdDateTime": "2026-10-21T11:19:56.32Z",
+  "description": "[text:14 chars]",
+  "displayName": "Person 3",
+  "email": "person-2@example.invalid",
+  "id": "id-9a1eaf6f",
+  "isArchived": false,
+  "isFavoriteByDefault": null,
+  "layoutType": null,
+  "membershipType": "standard",
+  "tenantId": "id-ddf09329",
+  "webUrl": "https://example.invalid/e889b376c0"
+}

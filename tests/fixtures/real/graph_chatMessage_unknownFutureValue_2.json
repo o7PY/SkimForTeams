@@ -1,0 +1,45 @@
+{
+  "attachments": [],
+  "body": {
+    "content": "[text:21 chars]",
+    "contentType": "html"
+  },
+  "channelIdentity": {
+    "channelId": "id-9a1eaf6f",
+    "teamId": "id-46b274bb"
+  },
+  "chatId": null,
+  "createdDateTime": "2026-10-21T19:41:51.555Z",
+  "deletedDateTime": null,
+  "etag": "id-84d9c4b8",
+  "eventDetail": {
+    "@odata.type": "#microsoft.graph.teamsAppRemovedEventMessageDetail",
+    "initiator": {
+      "application": null,
+      "device": null,
+      "user": {
+        "@odata.type": "#microsoft.graph.teamworkUserIdentity",
+        "displayName": null,
+        "id": "id-d818dfe7",
+        "tenantId": "id-ddf09329",
+        "userIdentityType": "aadUser"
+      }
+    },
+    "teamsAppDisplayName": "[name:21 chars]",
+    "teamsAppId": "id-68241900"
+  },
+  "from": null,
+  "id": "id-84d9c4b8",
+  "importance": "normal",
+  "lastEditedDateTime": null,
+  "lastModifiedDateTime": "2026-10-21T19:41:51.555Z",
+  "locale": "en-us",
+  "mentions": [],
+  "messageType": "unknownFutureValue",
+  "policyViolation": null,
+  "reactions": [],
+  "replyToId": null,
+  "subject": null,
+  "summary": null,
+  "webUrl": "https://example.invalid/50216963b8"
+}

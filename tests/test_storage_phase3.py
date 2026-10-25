@@ -149,3 +149,21 @@ async def test_deleted_parent_text_is_not_returned(store):
         await store.pool.execute("update messages set deleted_at=now() where message_id='m0'")
     rows = {r["message_id"]: r for r in await store.list_pending_messages(PV, 3, 10)}
     assert rows["reply"]["parent_text"] is None and "m0" not in rows
+
+
+async def test_nul_and_surrogates_in_any_write_never_break_postgres(pg_store):
+    """P3-DIFF-014: runs only with TEST_DATABASE_URL. Text with NUL / lone surrogates goes through every write path."""
+    s = pg_store
+    await seed(s, n=0)
+    await s.backfill_message({"conversation_id": CONV, "message_id": "nul", "reply_to_id": None, "from_aad_id": "prof-aad",
+                              "from_name": "Pro\x00f", "text": "Quiz\x00 1 \ud83d on 23 Oct", "html": "<p>a\x00</p>", "importance": None,
+                              "mentions": None, "subject": "S\x00", "created_at": T0, "last_edited_at": None, "deleted_at": None}, [], [])
+    (m,) = await s.list_pending_messages(PV, 3, 10)
+    assert m["text"] == "Quiz 1  on 23 Oct"
+    await s.commit_message_analysis(
+        analysis("nul", output={"title": "Qu\x00iz", "n": ["a\ud800"]}, category="event"),
+        [{"kind": "create", "event": ev(title="Quiz\x00 1", venue="LHC\x00", details="x\x00"), "relation": "created",
+          "changes": [{"change_type": "created", "old_values": None, "new_values": {"title": "Q\x00"}, "confidence": "high"}]}],
+        SRC("nul"))
+    (e,) = await s.list_events(team_id="T1")
+    assert e["title"] == "Quiz 1" and e["venue"] == "LHC"

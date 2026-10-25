@@ -12,14 +12,16 @@ import asyncpg
 
 from ..normalize import MessageEvent, to_plain_text
 from ..normalize_graph import fill_empty, missing_attachments
+from ..textclean import clean_json
 from .ai_postgres import PostgresAIMixin
+from .cleanpool import CleanPool
 
 log = logging.getLogger("skim.storage")
 
 
 async def _init_conn(conn: asyncpg.Connection) -> None:
     # Store/return jsonb as Python objects, not strings.
-    await conn.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
+    await conn.set_type_codec("jsonb", encoder=lambda o: json.dumps(clean_json(o)), decoder=json.loads, schema="pg_catalog")
 
 
 def pool_kwargs(dsn: str) -> dict:
@@ -36,7 +38,7 @@ class PostgresStorage(PostgresAIMixin):
         self.pool: asyncpg.Pool | None = None
 
     async def start(self) -> None:
-        self.pool = await asyncpg.create_pool(self.dsn, **pool_kwargs(self.dsn))
+        self.pool = CleanPool(await asyncpg.create_pool(self.dsn, **pool_kwargs(self.dsn)))  # cleans every parameter
 
     async def close(self) -> None:
         if self.pool:

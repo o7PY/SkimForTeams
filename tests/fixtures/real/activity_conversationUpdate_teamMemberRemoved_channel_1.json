@@ -1,0 +1,37 @@
+{
+  "channelData": {
+    "eventType": "teamMemberRemoved",
+    "team": {
+      "aadGroupId": "id-46b274bb",
+      "id": "id-9a1eaf6f",
+      "name": "[text:14 chars]"
+    },
+    "tenant": {
+      "id": "id-ddf09329"
+    }
+  },
+  "channelId": "msteams",
+  "conversation": {
+    "conversationType": "channel",
+    "id": "id-9a1eaf6f",
+    "isGroup": true,
+    "tenantId": "id-ddf09329"
+  },
+  "from": {
+    "aadObjectId": "id-d818dfe7",
+    "id": "id-c7fc22f3"
+  },
+  "id": "f:id-a7d13e0f",
+  "membersRemoved": [
+    {
+      "id": "id-ce63d092"
+    }
+  ],
+  "recipient": {
+    "id": "id-ce63d092",
+    "name": "[text:4 chars]"
+  },
+  "serviceUrl": "https://example.invalid/ebe9714604",
+  "timestamp": "2026-10-21T21:23:20.8321597Z",
+  "type": "conversationUpdate"
+}

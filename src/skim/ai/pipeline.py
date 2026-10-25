@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
 
+from ..textclean import clean_text
 from .config import AIConfig
 from .prompts import load
 from .providers.router import AllProvidersFailed, Router
@@ -74,7 +75,7 @@ _OUR_TAGS = re.compile(r"<(/?)(message|parent|subject|document|author_role|poste
 
 def _data(text: str | None) -> str:
     """Untrusted text can neither close nor imitate our wrapper tags (a zero-width space breaks them up)."""
-    return _OUR_TAGS.sub(lambda m: "<\u200b" + m.group(1) + m.group(2), (text or "").replace("</", "<\u200b/"))
+    return _OUR_TAGS.sub(lambda m: "<\u200b" + m.group(1) + m.group(2), clean_text(text or "").replace("</", "<\u200b/"))
 
 
 def _posted(msg: dict, fallback: datetime) -> tuple[datetime, bool]:
