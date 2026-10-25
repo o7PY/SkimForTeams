@@ -160,11 +160,15 @@ class Pipeline:
         posted = doc.get("modified_at") or doc.get("created_at") or self.clock()
         source = {"kind": "document", "team_id": doc["team_id"], "at": posted,
                   "ref": {"document_id": doc["id"], "chunk_index": chunk["chunk_index"]}}
-        # P3-D-019 applies to files too: the role comes from whoever last modified (else created) the file.
-        role = author_role({"from_aad_id": doc.get("modified_by_aad") or doc.get("created_by_aad"),
-                            "installed_by_aad": doc.get("installed_by_aad")}, self.cfg)
+        # P3-D-019 applies to files too. The role is that of the LAST MODIFIER. The creator is used only for a file that has
+        # never been modified by anyone else; a modifier we cannot identify gives no id (student if a staff list is set,
+        # else unknown), never the creator's role (a student may have co-edited a staff file).
+        edited = bool(doc.get("modified_by_aad") or doc.get("modified_by_name"))
+        who = doc.get("modified_by_aad") if edited else doc.get("created_by_aad")
+        role = author_role({"from_aad_id": who, "installed_by_aad": doc.get("installed_by_aad")}, self.cfg)
         if role == "student":
             return Outcome("ok", None, role)  # students never create or change events, in chat or in files
+        plan_role = "unknown"  # files can be co-edited: even staff documents are capped at medium confidence
         red = Redactor([n for n in (doc.get("created_by_name"), doc.get("modified_by_name")) if n])
         system = load("classify_extract") + load("document_extract")
         try:
@@ -176,7 +180,7 @@ class Pipeline:
         items = ex.items if ex.category in ("event", "change") else []
         if not items:
             return out
-        ops = await self._plan({"team_id": doc["team_id"], "version": 1, "text": chunk["text"]}, items, ex, role,
+        ops = await self._plan({"team_id": doc["team_id"], "version": 1, "text": chunk["text"]}, items, ex, plan_role,
                                posted, posted, red, out, {}, source)
         if ops:
             await self.storage.commit_message_analysis(None, ops, source)

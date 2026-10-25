@@ -329,3 +329,24 @@ async def test_oversized_extracted_text_is_skipped_not_chunked():
     d = await store.get_document("d", "Syllabus.docx")
     assert (store.document_texts[d["id"]]["status"], store.document_texts[d["id"]]["reason"]) == ("skipped", "too_much_text")
     assert await store.list_doc_chunks(d["id"]) == [] and prov.calls == []
+
+
+async def test_unidentified_last_modifier_never_inherits_the_staff_creators_role_and_staff_docs_cap_at_medium():
+    from dataclasses import replace
+    store = await setup(None)
+    # created by staff, last modified by someone with a name but no AAD id -> not trusted as staff
+    await store.upsert_document(doc_row("coedited.docx", created_by_aad="prof", modified_by_aad=None, modified_by_name="Some Student"))
+    await store.upsert_document(doc_row("clean.docx", created_by_aad="prof", modified_by_aad="prof"))
+    cfg = replace(CFG, staff_aad_ids=frozenset({"prof"}))
+    prov = ScriptedProvider({"Quiz 1": extraction("event", [item("create", "quiz", "Quiz 1", confidence="high", when={
+        "kind": "absolute", "date": "2026-11-14", "time": "10:00", "text": "x"})], confidence="high")})
+    router = Router([prov])
+    ctx = JobContext(store, None, Budget(60), ai=AIServices(cfg, router, Pipeline(store, router, cfg)))
+
+    async def fetch(d):
+        return make_docx(SYLLABUS)
+
+    await ai_documents(ctx, None, fetch=fetch)
+    (ev,) = store.events.values()
+    assert ev["source_ref"]["document_id"] == (await store.get_document("d", "clean.docx"))["id"]
+    assert ev["confidence"] == "medium"  # staff-authored, but files can be co-edited
