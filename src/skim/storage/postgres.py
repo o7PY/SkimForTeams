@@ -12,6 +12,7 @@ import asyncpg
 
 from ..normalize import MessageEvent, to_plain_text
 from ..normalize_graph import fill_empty, missing_attachments
+from .ai_postgres import PostgresAIMixin
 
 log = logging.getLogger("skim.storage")
 
@@ -29,7 +30,7 @@ def pool_kwargs(dsn: str) -> dict:
     return kw
 
 
-class PostgresStorage:
+class PostgresStorage(PostgresAIMixin):
     def __init__(self, dsn: str) -> None:
         self.dsn = dsn
         self.pool: asyncpg.Pool | None = None

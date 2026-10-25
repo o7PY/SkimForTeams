@@ -8,10 +8,12 @@ from datetime import datetime, timezone
 
 from ..normalize import MessageEvent, has_markup, to_plain_text
 from ..normalize_graph import fill_empty, missing_attachments
+from .ai_memory import MemoryAIMixin
 
 
-class MemoryStorage:
+class MemoryStorage(MemoryAIMixin):
     def __init__(self) -> None:
+        self._init_ai()
         self.raw: list[dict] = []
         self.teams: dict[str, dict] = {}
         self.conversations: dict[str, dict] = {}
