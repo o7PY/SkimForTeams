@@ -15,6 +15,8 @@ class MemoryAIMixin:
         self.event_changes: list[dict] = []
         self.message_event_links: dict[tuple, dict] = {}
         self._event_seq = 0
+        self.document_texts: dict[int, dict] = {}
+        self.doc_chunks: dict[int, list[dict]] = {}
 
     async def list_pending_messages(self, prompt_version: str, max_attempts: int, limit: int) -> list[dict]:
         out = []
@@ -54,12 +56,13 @@ class MemoryAIMixin:
         return [dict(v) for k, v in self.message_event_links.items() if k[:2] == (conversation_id, message_id)]
 
     async def commit_message_analysis(self, analysis: dict, ops: list[dict], source: dict) -> list[dict]:
-        key = (analysis["conversation_id"], analysis["message_id"], analysis["message_version"], analysis["prompt_version"])
-        prev = self.analyses.get(key)
-        self.analyses[key] = {"error_class": None, "output": None, "provider": None, "model": None, "category": None,
-                              "confidence": None, "author_role": None, "needs_review": False, **analysis,
-                              "attempts": (prev["attempts"] if prev else 0) + 1,
-                              "processed_at": datetime.now(timezone.utc)}
+        if analysis is not None:  # None for document-sourced events (no message to analyse)
+            key = (analysis["conversation_id"], analysis["message_id"], analysis["message_version"], analysis["prompt_version"])
+            prev = self.analyses.get(key)
+            self.analyses[key] = {"error_class": None, "output": None, "provider": None, "model": None, "category": None,
+                                  "confidence": None, "author_role": None, "needs_review": False, **analysis,
+                                  "attempts": (prev["attempts"] if prev else 0) + 1,
+                                  "processed_at": datetime.now(timezone.utc)}
         now = datetime.now(timezone.utc)
         results = []
         for op in ops:
@@ -133,3 +136,30 @@ class MemoryAIMixin:
         pending = len(await self.list_pending_messages(prompt_version, max_attempts, 10**6))
         return {"analyses_by_status": by_status, "failures_by_error_class": failures, "messages_pending": pending,
                 "events": len(self.events), "events_needing_review": sum(1 for e in self.events.values() if e["needs_review"])}
+
+    # ---- documents (FR-306)
+    async def list_pending_documents(self, limit: int) -> list[dict]:
+        """Live pdf/docx/pptx files of non-removed teams whose ctag has no document_texts row yet (oldest first)."""
+        out = []
+        for d in self.documents.values():
+            team = self.teams.get(d.get("team_id") or "")
+            if (d["is_folder"] or d["deleted_at"] is not None or team is None or team.get("removed_at")
+                    or (d.get("name") or "").rsplit(".", 1)[-1].lower() not in ("pdf", "docx", "pptx")):
+                continue
+            t = self.document_texts.get(d["id"])
+            if t and t["ctag"] == d["ctag"]:
+                continue
+            out.append(dict(d, installed_by_aad=team.get("installed_by_aad")))
+        out.sort(key=lambda r: (r["modified_at"] is None, r["modified_at"] or _MIN, r["id"]))
+        return out[:limit]
+
+    async def save_document_text(self, document_id: int, ctag, status: str, reason, page_count, char_count,
+                                 chunks: list[dict]) -> None:
+        """Replace the document's text rows (older ctags' chunks go away)."""
+        self.document_texts[document_id] = {"document_id": document_id, "ctag": ctag, "status": status, "reason": reason,
+                                            "page_count": page_count, "char_count": char_count,
+                                            "extracted_at": datetime.now(timezone.utc)}
+        self.doc_chunks[document_id] = [{"document_id": document_id, "ctag": ctag, **c} for c in chunks]
+
+    async def list_doc_chunks(self, document_id: int) -> list[dict]:
+        return [dict(c) for c in self.doc_chunks.get(document_id, [])]

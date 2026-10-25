@@ -6,6 +6,17 @@ from .ai_memory import EVENT_FIELDS
 _EVENT_COLS = ("team_id", "type", "title", "is_deadline", "starts_at", "ends_at", "event_date", "time_known",
                "time_defaulted", "venue", "details", "status", "confidence", "needs_review")
 
+_PENDING_DOCS_SQL = """
+select d.*, t.installed_by_aad
+from documents d
+join teams t on t.id = d.team_id and t.removed_at is null
+left join document_texts x on x.document_id = d.id
+where d.deleted_at is null and not d.is_folder
+  and lower(substring(d.name from '[^.]*$')) in ('pdf', 'docx', 'pptx')
+  and (x.document_id is null or x.ctag is distinct from d.ctag)
+order by d.modified_at asc nulls last, d.id asc
+limit $1"""
+
 _PENDING_SQL = """
 select m.conversation_id, m.message_id, m.current_version as version, m.text, m.subject, m.created_at,
        m.last_edited_at, m.from_aad_id, m.from_name, m.reply_to_id, m.mentions, c.team_id, t.installed_by_aad,
@@ -43,24 +54,29 @@ class PostgresAIMixin:
                                      conversation_id, message_id)
         return [dict(r) for r in rows]
 
+    @staticmethod
+    async def _save_analysis(conn, a: dict) -> None:
+        await conn.execute(
+            """insert into message_analysis (conversation_id, message_id, message_version, prompt_version, status,
+                 category, confidence, provider, model, output, author_role, needs_review, error_class, attempts)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1)
+               on conflict (conversation_id, message_id, message_version, prompt_version) do update set
+                 status=excluded.status, category=excluded.category, confidence=excluded.confidence,
+                 provider=excluded.provider, model=excluded.model, output=excluded.output,
+                 author_role=excluded.author_role, needs_review=excluded.needs_review,
+                 error_class=excluded.error_class, attempts=message_analysis.attempts + 1, processed_at=now()""",
+            a["conversation_id"], a["message_id"], a["message_version"], a["prompt_version"], a["status"],
+            a.get("category"), a.get("confidence"), a.get("provider"), a.get("model"), a.get("output"),
+            a.get("author_role"), bool(a.get("needs_review")), a.get("error_class"))
+
     async def commit_message_analysis(self, analysis: dict, ops: list[dict], source: dict) -> list[dict]:
         """One transaction: the analysis row, event creates/updates, their change rows and the message links."""
         assert self.pool
         a = analysis
         results = []
         async with self.pool.acquire() as conn, conn.transaction():
-            await conn.execute(
-                """insert into message_analysis (conversation_id, message_id, message_version, prompt_version, status,
-                     category, confidence, provider, model, output, author_role, needs_review, error_class, attempts)
-                   values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1)
-                   on conflict (conversation_id, message_id, message_version, prompt_version) do update set
-                     status=excluded.status, category=excluded.category, confidence=excluded.confidence,
-                     provider=excluded.provider, model=excluded.model, output=excluded.output,
-                     author_role=excluded.author_role, needs_review=excluded.needs_review,
-                     error_class=excluded.error_class, attempts=message_analysis.attempts + 1, processed_at=now()""",
-                a["conversation_id"], a["message_id"], a["message_version"], a["prompt_version"], a["status"],
-                a.get("category"), a.get("confidence"), a.get("provider"), a.get("model"), a.get("output"),
-                a.get("author_role"), bool(a.get("needs_review")), a.get("error_class"))
+            if a is not None:  # None for document-sourced events
+                await self._save_analysis(conn, a)
             for op in ops:
                 if op["kind"] == "create":
                     ev = op["event"]
@@ -143,3 +159,31 @@ class PostgresAIMixin:
         ev = await self.pool.fetchrow("select count(*)::int n, count(*) filter (where needs_review)::int r from events")
         return {"analyses_by_status": by_status, "failures_by_error_class": failures, "messages_pending": pending,
                 "events": ev["n"], "events_needing_review": ev["r"]}
+
+    # ---- documents (FR-306)
+    async def list_pending_documents(self, limit: int) -> list[dict]:
+        assert self.pool
+        return [dict(r) for r in await self.pool.fetch(_PENDING_DOCS_SQL, limit)]
+
+    async def save_document_text(self, document_id: int, ctag, status: str, reason, page_count, char_count,
+                                 chunks: list[dict]) -> None:
+        """One transaction: the document_texts row, and the chunk set replaced (older ctags' chunks are deleted)."""
+        assert self.pool
+        async with self.pool.acquire() as conn, conn.transaction():
+            await conn.execute("delete from embeddings where kind='doc_chunk' and ref->>'document_id' = $1", str(document_id))
+            await conn.execute("delete from doc_chunks where document_id=$1", document_id)
+            await conn.execute(
+                """insert into document_texts (document_id, ctag, status, reason, page_count, char_count)
+                   values ($1,$2,$3,$4,$5,$6)
+                   on conflict (document_id) do update set ctag=excluded.ctag, status=excluded.status,
+                     reason=excluded.reason, page_count=excluded.page_count, char_count=excluded.char_count,
+                     extracted_at=now()""", document_id, ctag, status, reason, page_count, char_count)
+            for c in chunks:
+                await conn.execute(
+                    "insert into doc_chunks (document_id, ctag, chunk_index, page_from, page_to, text) values ($1,$2,$3,$4,$5,$6)",
+                    document_id, ctag, c["chunk_index"], c.get("page_from"), c.get("page_to"), c["text"])
+
+    async def list_doc_chunks(self, document_id: int) -> list[dict]:
+        assert self.pool
+        return [dict(r) for r in await self.pool.fetch(
+            "select * from doc_chunks where document_id=$1 order by chunk_index", document_id)]

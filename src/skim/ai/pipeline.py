@@ -91,6 +91,12 @@ def build_prompt(msg: dict, role: str, red: Redactor, posted: datetime) -> str:
     return "\n".join(parts)
 
 
+def build_doc_prompt(doc: dict, chunk_text: str, red: Redactor, posted: datetime) -> str:
+    p = posted.astimezone(IST)
+    return "\n".join([f"<posted_ist>{p.strftime('%A, %Y-%m-%d %H:%M')} IST</posted_ist>",
+                      "<author_role>unknown</author_role>", f"<document>{_data(red.redact(chunk_text))}</document>"])
+
+
 def _snapshot(e: dict) -> dict:
     return {"date": e["event_date"].isoformat() if e.get("event_date") else None,
             "time": e["starts_at"].astimezone(IST).strftime("%H:%M") if e.get("starts_at") else None,
@@ -146,6 +152,29 @@ class Pipeline:
 
         ops = await self._plan(msg, items, ex, role, posted, at, red, out, analysis, source)
         await self.storage.commit_message_analysis(analysis, ops, source)
+        return out
+
+    async def process_document_chunk(self, doc: dict, chunk: dict) -> Outcome:
+        """One document chunk -> events (FR-306). Same extraction schema and the same resolver as messages; the author is
+        unknown (confidence capped at medium) and the LLM output is not stored (the chunk text is the record)."""
+        posted = doc.get("modified_at") or doc.get("created_at") or self.clock()
+        source = {"kind": "document", "team_id": doc["team_id"], "at": posted,
+                  "ref": {"document_id": doc["id"], "chunk_index": chunk["chunk_index"]}}
+        red = Redactor([n for n in (doc.get("created_by_name"), doc.get("modified_by_name")) if n])
+        system = load("classify_extract") + load("document_extract")
+        try:
+            comp = await self.router.complete(MessageExtraction, system, build_doc_prompt(doc, chunk["text"], red, posted))
+        except AllProvidersFailed as e:
+            return Outcome("failed", role="unknown", error_class=e.error_class)
+        ex: MessageExtraction = comp.value
+        out = Outcome("ok", ex.category, "unknown")
+        items = ex.items if ex.category in ("event", "change") else []
+        if not items:
+            return out
+        ops = await self._plan({"team_id": doc["team_id"], "version": 1, "text": chunk["text"]}, items, ex, "unknown",
+                               posted, posted, red, out, {}, source)
+        if ops:
+            await self.storage.commit_message_analysis(None, ops, source)
         return out
 
     # ---------------------------------------------------------------- planning

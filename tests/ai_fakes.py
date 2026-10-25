@@ -54,8 +54,9 @@ class ScriptedProvider(FakeProvider):
         if "<candidates>" in user:  # tie-break
             ans = self.script.get("__tiebreak__", "new")
             return ProviderReply(json.dumps({"match": ans}), 1)
-        text = re.search(r"<message>(.*?)</message>", user, re.S).group(1)
-        reply = self.script[text]
+        text = re.search(r"<(?:message|document)>(.*?)</(?:message|document)>", user, re.S).group(1)
+        reply = self.script[text] if text in self.script else next(
+            (v for k, v in self.script.items() if k and k in text), None) or self.script[text if "" not in self.script else ""]  # exact, else substring, else ""
         if isinstance(reply, ProviderErrorLike):
             raise reply.error
         return ProviderReply(json.dumps(reply), 10)

@@ -340,8 +340,8 @@ def test_source_has_no_content_download_code_path():
     from pathlib import Path
     root = Path(__file__).parent.parent / "src" / "skim"
     for f in root.rglob("*.py"):
-        if f.name in ("client.py", "normalize_graph.py"):
-            continue
+        if f.name in ("client.py", "normalize_graph.py") or f.as_posix().endswith("skim/ai/documents.py"):
+            continue  # documents.py is the ONE module allowed to fetch file content (P3-D-015); see test_ai_documents.py
         for n, line in enumerate(f.read_text().splitlines(), 1):
             assert not re.search(r"/content\b(?!Url)", line), f"{f}:{n} {line.strip()}"
             assert "downloadurl" not in line.lower(), f"{f}:{n} {line.strip()}"
