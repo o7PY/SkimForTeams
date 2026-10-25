@@ -38,6 +38,7 @@ class AIConfig:
     rate_retries: int = 1
     doc_max_bytes: int = 20_000_000
     doc_max_pages: int = 50
+    doc_max_chars: int = 150_000   # extracted text per file (about 100 chunks = 100 LLM calls)
     timezone: str = "Asia/Kolkata"
     staff_aad_ids: frozenset[str] = frozenset()
 
@@ -67,6 +68,6 @@ class AIConfig:
             max_messages_per_run=num("AI_MAX_MESSAGES_PER_RUN", 200), max_docs_per_run=num("AI_MAX_DOCS_PER_RUN", 10),
             max_embeds_per_run=num("AI_MAX_EMBEDS_PER_RUN", 500), max_attempts=num("AI_MAX_ATTEMPTS", 3),
             min_call_interval=float(env.get("AI_MIN_CALL_INTERVAL") or 2.0) if _isnum(env.get("AI_MIN_CALL_INTERVAL")) else 2.0,
-            doc_max_bytes=num("DOC_MAX_BYTES", 20_000_000), doc_max_pages=num("DOC_MAX_PAGES", 50),
+            doc_max_bytes=num("DOC_MAX_BYTES", 20_000_000), doc_max_pages=num("DOC_MAX_PAGES", 50), doc_max_chars=num("DOC_MAX_CHARS", 150_000),
             timezone=env.get("COURSE_TIMEZONE") or "Asia/Kolkata",
             staff_aad_ids=frozenset(x.strip() for x in (env.get("STAFF_AAD_IDS") or "").split(",") if x.strip()))

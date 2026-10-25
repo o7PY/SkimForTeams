@@ -178,10 +178,10 @@ class PostgresAIMixin:
                    on conflict (document_id) do update set ctag=excluded.ctag, status=excluded.status,
                      reason=excluded.reason, page_count=excluded.page_count, char_count=excluded.char_count,
                      extracted_at=now()""", document_id, ctag, status, reason, page_count, char_count)
-            for c in chunks:
-                await conn.execute(
+            if chunks:
+                await conn.executemany(
                     "insert into doc_chunks (document_id, ctag, chunk_index, page_from, page_to, text) values ($1,$2,$3,$4,$5,$6)",
-                    document_id, ctag, c["chunk_index"], c.get("page_from"), c.get("page_to"), c["text"])
+                    [(document_id, ctag, c["chunk_index"], c.get("page_from"), c.get("page_to"), c["text"]) for c in chunks])
 
     async def list_doc_chunks(self, document_id: int) -> list[dict]:
         assert self.pool

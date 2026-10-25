@@ -35,6 +35,8 @@ async def ai_documents(ctx: JobContext, team_id: str | None, fetch=None) -> str:
             ctx.stats["ai_doc_fetch_transient"] += 1  # stays pending: retried by the next run
             log.warning(json.dumps({"event": "ai_doc_fetch_failed", "document_id": doc["id"], "error_class": str(e)[:40]}))
             continue
+        if extracted and sum(len(p) for p in extracted.pages) > cfg.doc_max_chars:
+            extracted, text_status, reason = None, "skipped", "too_much_text"  # bounds chunks, DB rows and LLM calls
         chunks = chunk_pages(extracted.pages) if extracted else []
         if extracted and not chunks:
             text_status, reason = "skipped", "no_text"  # scanned images etc.; OCR is out of scope

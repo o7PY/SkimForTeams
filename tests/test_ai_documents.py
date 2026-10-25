@@ -292,3 +292,40 @@ def test_xml_with_a_dtd_or_entities_is_refused():
         with pytest.raises(docs.DocumentSkip) as e:
             docs.extract(name, data, 10)
         assert e.value.reason == "xml_dtd_refused" and e.value.status == "failed"
+
+
+async def test_student_authored_documents_never_create_events_when_staff_are_configured():
+    from dataclasses import replace
+    store = await setup(None)
+    await store.upsert_document(doc_row("mine.docx", modified_by_aad="student-aad"))
+    await store.upsert_document(doc_row("prof.docx", modified_by_aad="prof"))
+    cfg = replace(CFG, staff_aad_ids=frozenset({"prof"}))
+    prov = ScriptedProvider({"Quiz 1": extraction("event", [item("create", "quiz", "Quiz 1", when={
+        "kind": "absolute", "date": "2026-11-14", "time": "10:00", "text": "x"})])})
+    router = Router([prov])
+    ctx = JobContext(store, None, Budget(60), ai=AIServices(cfg, router, Pipeline(store, router, cfg)))
+
+    async def fetch(d):
+        return make_docx(SYLLABUS)
+
+    await ai_documents(ctx, None, fetch=fetch)
+    assert [e["source_ref"]["document_id"] for e in store.events.values()] == [(await store.get_document("d", "prof.docx"))["id"]]
+    assert len(prov.calls) == 1  # the student's file was read and stored but never sent to the model
+
+
+async def test_oversized_extracted_text_is_skipped_not_chunked():
+    from dataclasses import replace
+    store = await setup(None)
+    await store.upsert_document(doc_row())
+    cfg = replace(CFG, doc_max_chars=1000)
+    prov = ScriptedProvider({"": extraction("announcement")})
+    router = Router([prov])
+    ctx = JobContext(store, None, Budget(60), ai=AIServices(cfg, router, Pipeline(store, router, cfg)))
+
+    async def fetch(d):
+        return make_docx(["word " * 400])
+
+    await ai_documents(ctx, None, fetch=fetch)
+    d = await store.get_document("d", "Syllabus.docx")
+    assert (store.document_texts[d["id"]]["status"], store.document_texts[d["id"]]["reason"]) == ("skipped", "too_much_text")
+    assert await store.list_doc_chunks(d["id"]) == [] and prov.calls == []
