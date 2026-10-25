@@ -53,16 +53,29 @@ def _clock(s: str | None) -> time | None:
     return None if s is None else time(int(s[:2]), int(s[3:]))
 
 
-def _fix_year(d: date, today: date) -> date:
-    """The LLM may guess a year for "4 November": keep the term-local reading (next occurrence on or after posted)."""
+FAR_FUTURE_DAYS = 270   # about nine months
+
+
+def _year_stated(d: date, when: When, source_text: str) -> bool:
+    """Did the message itself say the year the model chose? (the phrase, or anywhere in the message)."""
+    return bool(re.search(rf"(?<!\d){d.year}(?!\d)", f"{when.text or ''} {source_text or ''}"))
+
+
+def _resolve_year(d: date, today: date, when: When, source_text: str) -> tuple[date, str, str]:
+    """(date, confidence cap, review reason). PHASE3 §3.3: a date with NO year is its next occurrence on or after the posted
+    date, whatever year the model guessed. If that is implausibly far away it is kept but flagged (low + review); a past date
+    is never stored silently. A year that the message states is taken as written; if it is already past it is flagged."""
+    if _year_stated(d, when, source_text):
+        return (d, "medium", "stated-past-date") if d < today - timedelta(days=1) else (d, "high", "")
     try:
-        while d < today - timedelta(days=60):
-            d = d.replace(year=d.year + 1)
-        while d > today + timedelta(days=300):
-            d = d.replace(year=d.year - 1)
-    except ValueError:  # 29 Feb moved to a non-leap year
-        pass
-    return d
+        cand = d.replace(year=today.year)
+        if cand < today:
+            cand = cand.replace(year=today.year + 1)
+    except ValueError:  # 29 Feb in a non-leap year: leave the model's reading, but flag it
+        return d, "low", "bad-leap-date"
+    if (cand - today).days > FAR_FUTURE_DAYS:
+        return cand, "low", "year-inferred-far"
+    return cand, "high", ""
 
 
 def _weekday_date(today: date, target: int, qualifier: str | None, at: time | None, posted_clock: time) -> tuple[date, str, str]:
@@ -82,7 +95,8 @@ def _weekday_date(today: date, target: int, qualifier: str | None, at: time | No
     return today + timedelta(days=ahead), "high", "weekday"
 
 
-def resolve_when(when: When, posted: datetime, *, is_deadline: bool = False, existing: dict | None = None) -> Resolved:
+def resolve_when(when: When, posted: datetime, *, is_deadline: bool = False, existing: dict | None = None,
+                 source_text: str = "") -> Resolved:
     """Turn the LLM's `when` into dates. `existing` (the matched event) supplies "same time/place" values."""
     if posted.tzinfo is None:
         raise ValueError("posted must be timezone-aware")
@@ -90,6 +104,7 @@ def resolve_when(when: When, posted: datetime, *, is_deadline: bool = False, exi
     today, now_clock = p.date(), p.time().replace(second=0, microsecond=0)
     at, end = _clock(when.time), _clock(when.end_time)
     conf, why = "high", ""
+    review = False
 
     if when.kind in ("none", "same_as_existing") and at is not None:
         # A time with no date ("the quiz will be 10:15-10:45"): it belongs to the matched event's date. Never invented.
@@ -112,7 +127,9 @@ def resolve_when(when: When, posted: datetime, *, is_deadline: bool = False, exi
             d = None
         if d is None:
             return Resolved(max_confidence="low", needs_review=True, reason="bad-date")
-        d = _fix_year(d, today)
+        d, ycap, yreason = _resolve_year(d, today, when, source_text)
+        if yreason:
+            conf, why, review = ycap, yreason, True
     elif when.kind == "relative":
         rel = when.relative
         if rel is None:
@@ -129,10 +146,10 @@ def resolve_when(when: When, posted: datetime, *, is_deadline: bool = False, exi
 
     # Times. A deadline with no time gets 23:59 (marked); anything else with no time stays date-only.
     if at is not None:
-        return Resolved(d, at, end if end and end > at else None, True, False, conf, False, why)
+        return Resolved(d, at, end if end and end > at else None, True, False, conf, review, why)
     if is_deadline:
-        return Resolved(d, DEADLINE_DEFAULT, None, False, True, conf, False, why + "+deadline-default")
-    return Resolved(d, None, None, False, False, conf, False, why)
+        return Resolved(d, DEADLINE_DEFAULT, None, False, True, conf, review, why + "+deadline-default")
+    return Resolved(d, None, None, False, False, conf, review, why)
 
 
 def _from_existing(existing: dict | None) -> Resolved:

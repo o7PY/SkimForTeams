@@ -168,3 +168,42 @@ def test_time_only_message_uses_the_matched_events_date():  # msg 9
 def test_time_only_message_without_an_event_is_not_guessed():
     r = R(When(kind="none", time="10:15"), "2026-10-22 15:40")
     assert r.event_date is None and r.time is None and r.needs_review
+
+
+# ---- P3-DIFF-016: a date with no year is its NEXT occurrence on or after the posted date (§3.3)
+def test_year_less_past_date_moves_to_next_year_and_is_flagged_when_far():
+    r = resolve_when(absolute("2026-09-04", text="4th September"), posted("2026-10-20 11:00"))
+    assert r.event_date == date(2027, 9, 4) and r.needs_review and r.max_confidence == "low" and r.reason == "year-inferred-far"
+    r = resolve_when(absolute("2026-12-20", text="20th December"), posted("2026-10-20 11:00"))
+    assert r.event_date == date(2026, 12, 20) and not r.needs_review and r.max_confidence == "high"
+
+
+def test_year_less_boundaries():
+    p = "2026-10-20 11:00"
+    # today itself is allowed; yesterday is next year (and 364 days away -> flagged)
+    assert resolve_when(absolute("2026-10-20", text="20 Oct"), posted(p)).event_date == date(2026, 10, 20)
+    far = resolve_when(absolute("2026-10-19", text="19 Oct"), posted(p))
+    assert far.event_date == date(2027, 10, 19) and far.needs_review
+    # exactly ~9 months is the limit: 270 days is fine, 271 is flagged
+    assert not resolve_when(absolute("2027-07-17", text="17 July"), posted(p)).needs_review      # 270 days
+    assert resolve_when(absolute("2027-07-18", text="18 July"), posted(p)).needs_review          # 271 days
+    # the model's own year does not matter when the message states none
+    assert resolve_when(absolute("2027-11-04", text="4 Nov"), posted(p)).event_date == date(2026, 11, 4)
+    # year rollover just after new year
+    r = resolve_when(absolute("2026-01-03", text="3 January"), posted("2026-12-28 10:00"))
+    assert r.event_date == date(2027, 1, 3) and not r.needs_review
+
+
+def test_a_stated_year_is_taken_as_written_and_a_stated_past_date_is_flagged():
+    r = resolve_when(absolute("2026-09-04", text="4 September 2026"), posted("2026-10-20 11:00"))
+    assert r.event_date == date(2026, 9, 4) and r.needs_review and r.max_confidence == "medium" and r.reason == "stated-past-date"
+    ok = resolve_when(absolute("2027-02-01", text="1 Feb 2027"), posted("2026-10-20 11:00"))
+    assert ok.event_date == date(2027, 2, 1) and not ok.needs_review
+    # the year may appear elsewhere in the message while the phrase has none
+    r = resolve_when(absolute("2026-11-04", text="4th November"), posted("2026-10-20 11:00"), source_text="Schedule 2026: quiz 4th November")
+    assert r.event_date == date(2026, 11, 4) and not r.needs_review
+
+
+def test_leap_day_in_a_non_leap_year_is_flagged_not_crashed():
+    r = resolve_when(absolute("2028-02-29", text="29 Feb"), posted("2026-10-20 11:00"))
+    assert r.needs_review and r.max_confidence == "low"

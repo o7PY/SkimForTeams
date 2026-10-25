@@ -206,12 +206,12 @@ class Pipeline:
             conf = item.confidence
             if role == "unknown":
                 conf = cap(conf, "medium")  # P3-D-019
-            guess = resolve_when(item.when, posted, is_deadline=_is_deadline(item))
+            guess = resolve_when(item.when, posted, is_deadline=_is_deadline(item), source_text=msg.get("text") or "")
             match = await find_match({"type": item.type, "title": title, "action": item.action,
                                       "refers_to_existing": item.refers_to_existing}, events, claimed,
                                      posted.astimezone(IST).date(), guess.event_date, self._tiebreak_fn(red, item, title, guess))
             target = match.event
-            res = resolve_when(item.when, posted, is_deadline=_is_deadline(item), existing=target)
+            res = resolve_when(item.when, posted, is_deadline=_is_deadline(item), existing=target, source_text=msg.get("text") or "")
             res = inherit_time(res, target, msg.get("text") or "")
             conf = cap(conf, res.max_confidence)
             review = res.needs_review or conf == "low" or match.needs_review

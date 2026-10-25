@@ -4,7 +4,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-PROMPT_VERSION = "p3-v1"
+PROMPT_VERSION = "p3-v2"
 _DIR = Path(__file__).parent
 
 

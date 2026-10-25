@@ -35,8 +35,8 @@ ITEMS: only when category is event or change; otherwise []. One item per distinc
 - refers_to_existing: true for reminders and changes (the event was announced before), false for a brand new announcement.
 - reference_hint: how the message points at an existing event ("the lab on Friday"), else null.
 - when: WHEN the event happens or is due (for deadlines: the due date, not the release date). Do NOT do calendar arithmetic yourself.
-  - kind "absolute": the message gives a calendar date ("26 October", "Friday, 30 October"): date = YYYY-MM-DD (use the posted year; next year only if the date would
-    otherwise be long past). time = 24h HH:MM India time if a time is stated, else null. "2-4 PM" = time 14:00, end_time 16:00. Infer AM/PM from context (lectures and labs are
+  - kind "absolute": the message gives a calendar date ("26 October", "Friday, 30 October"): date = YYYY-MM-DD (if the message gives no year, write the posted year: the system then
+    moves the date to its next occurrence; NEVER invent a year, and copy any year that IS written into `text`). time = 24h HH:MM India time if a time is stated, else null. "2-4 PM" = time 14:00, end_time 16:00. Infer AM/PM from context (lectures and labs are
     daytime). "noon" = 12:00, "midnight" = 23:59.
   - kind "relative": today / tonight / tomorrow = anchor "posted", days 0 / 0 / 1. "in 3 days" / "in 2 weeks" = anchor "offset", days / weeks.
     A weekday name = anchor "weekday", weekday mon|tue|wed|thu|fri|sat|sun, qualifier "this" for "this Friday" / "on Friday" / "Friday", "next" ONLY when the message says "next Friday".
@@ -46,7 +46,7 @@ ITEMS: only when category is event or change; otherwise []. One item per distinc
   - kind "vague": a period without a date ("first week of December", "last week of classes", "later", "next month").
   - kind "none": no date or time given (e.g. only the venue changes, or "the date will be announced").
   - "same time" / "same place": leave `time` null and copy the phrase into `text`; the system copies the old time. Never guess a time that is not written.
-  - `text`: the exact words about the date/time, copied from the message.
+  - `text`: the exact words about the date/time, copied from the message, including a written year ("4 September 2026") if there is one.
 - venue: the place if stated (e.g. "LHC 104"), else null.
 - details: one short phrase of extra information (syllabus, format, "closed book"), else null. Keep it short.
 - confidence: high | medium | low for THIS item. Use low when the date is vague, the message is unclear, or you are guessing which event is meant.

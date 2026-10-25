@@ -28,7 +28,7 @@ class AIConfig:
     gemini_model: str = "gemini-3.5-flash-lite"
     embed_model: str = "gemini-embedding-001"
     embed_dims: int = 768
-    prompt_version: str = "p3-v1"
+    prompt_version: str = "p3-v2"
     max_messages_per_run: int = 200
     max_docs_per_run: int = 10
     max_embeds_per_run: int = 500

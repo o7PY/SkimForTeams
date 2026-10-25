@@ -100,10 +100,10 @@ async def test_reprocess_keeps_old_analyses_and_leaves_events_alone():
     client, store, provider, close = await make({"Quiz 1 on 23 Oct": QUIZ})
     try:
         await client.post("/jobs/ai-process", headers=AUTH)
-        r = await client.post("/jobs/ai-reprocess?prompt_version=p3-v2", headers=AUTH)
+        r = await client.post("/jobs/ai-reprocess?prompt_version=p3-v9", headers=AUTH)
         body = await r.json()
         assert r.status == 200 and body["stats"]["ai_messages"] == 1
-        assert sorted(a["prompt_version"] for a in await store.list_message_analyses(CHAN, "q1")) == ["p3-test", "p3-v2"]
+        assert sorted(a["prompt_version"] for a in await store.list_message_analyses(CHAN, "q1")) == ["p3-test", "p3-v9"]
         events = await store.list_events(team_id=TEAM)
         assert len(events) == 1 and [c["change_type"] for c in (await store.get_event(events[0]["id"]))["changes"]] == ["created"]
         assert (await client.post("/jobs/ai-reprocess", headers=AUTH)).status == 400

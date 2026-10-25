@@ -321,3 +321,21 @@ async def test_candidate_titles_and_venues_are_redacted_in_the_tiebreak_prompt()
     await h.run()
     (tb,) = [c for c in h.provider.calls if "<candidates>" in c["user"]]
     assert "Asha" not in tb["user"] and "Rao" not in tb["user"] and "Room 9" not in tb["user"]
+
+
+async def test_schedule_message_without_years_never_stores_past_dates():
+    """Live bug: 'Midsem 1: 4th September ... Endsem: 20th December' posted in October created 2026-09-04 / 2026-09-15."""
+    text = "Course Schedule — Midsem 1: 4th September, Midsem 2: 15th September, Endsem: 20th December"
+    w = lambda d, t: ABS(d, text=t)  # noqa: E731  (the model guesses the posted year for every date)
+    h = await Harness({text: extraction("event", [
+        item("create", "exam", "Midsem 1", w("2026-09-04", "4th September")),
+        item("create", "exam", "Midsem 2", w("2026-09-15", "15th September")),
+        item("create", "exam", "Endsem", w("2026-12-20", "20th December"))])}).setup()
+    await h.post("2026-10-20 11:00", text)
+    await h.run()
+    evs = {e["title"]: e for e in await h.events()}
+    assert evs["Midsem 1"]["event_date"] == date(2027, 9, 4) and evs["Midsem 2"]["event_date"] == date(2027, 9, 15)
+    for t in ("Midsem 1", "Midsem 2"):  # implausibly far: kept, but flagged and low
+        assert evs[t]["needs_review"] and evs[t]["confidence"] == "low"
+    assert evs["Endsem"]["event_date"] == date(2026, 12, 20) and not evs["Endsem"]["needs_review"] and evs["Endsem"]["confidence"] == "high"
+    assert all(e["event_date"] >= date(2026, 10, 20) for e in evs.values())  # nothing in the past
