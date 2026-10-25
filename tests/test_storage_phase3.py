@@ -30,7 +30,7 @@ def ev(**kw):
             "details": None, "status": "scheduled", "confidence": "high", "needs_review": False, **kw}
 
 
-SRC = lambda mid: {"kind": "message", "ref": {"conversation_id": CONV, "message_id": mid}, "at": T0}  # noqa: E731
+SRC = lambda mid: {"kind": "message", "team_id": "T1", "ref": {"conversation_id": CONV, "message_id": mid}, "at": T0}  # noqa: E731
 
 
 async def test_pending_is_oldest_first_and_excludes_done_items(store):
@@ -115,3 +115,37 @@ async def test_ai_status_counts(store):
     st = await store.ai_status(PV, 3)
     assert st["analyses_by_status"] == {"failed": 1, "ok": 1}
     assert st["failures_by_error_class"] == {"Timeout": 1} and st["messages_pending"] == 2
+
+
+async def test_an_event_of_another_team_cannot_be_updated(store):
+    await seed(store, n=1)
+    await store.upsert_team({"id": "T2", "aad_group_id": "g2", "name": "Other", "tenant_id": "x"})
+    r = await store.commit_message_analysis(analysis("m0"), [{"kind": "create", "event": ev(team_id="T2"), "relation": "created",
+                                                              "changes": []}], {**SRC("m0"), "team_id": "T2"})
+    with pytest.raises(ValueError):
+        await store.commit_message_analysis(analysis("m0", version=2), [{"kind": "update", "event_id": r[0]["event_id"],
+                                            "fields": {"status": "cancelled"}, "relation": "changed", "changes": []}], SRC("m0"))
+    with pytest.raises(ValueError):  # and a team-T1 source cannot create a T2 event
+        await store.commit_message_analysis(analysis("m0", version=3), [{"kind": "create", "event": ev(team_id="T2"),
+                                            "relation": "created", "changes": []}], SRC("m0"))
+    assert (await store.get_event(r[0]["event_id"]))["event"]["status"] == "scheduled"
+
+
+async def test_deleted_parent_text_is_not_returned(store):
+    await seed(store, n=1)
+    await store.backfill_message({"conversation_id": CONV, "message_id": "reply", "reply_to_id": "m0", "from_aad_id": "s",
+                                  "from_name": "S", "text": "a reply", "html": None, "importance": None, "mentions": None,
+                                  "subject": None, "created_at": T0 + timedelta(days=1), "last_edited_at": None,
+                                  "deleted_at": None}, [], [])
+    rows = {r["message_id"]: r for r in await store.list_pending_messages(PV, 3, 10)}
+    assert rows["reply"]["parent_text"] == "hello 0"
+    await store.backfill_message({"conversation_id": CONV, "message_id": "m0", "reply_to_id": None, "from_aad_id": None,
+                                  "from_name": None, "text": None, "html": None, "importance": None, "mentions": None,
+                                  "subject": None, "created_at": None, "last_edited_at": None,
+                                  "deleted_at": T0 + timedelta(days=2)}, [], [])
+    if hasattr(store, "messages"):
+        store.messages[(CONV, "m0")]["deleted_at"] = T0 + timedelta(days=2)
+    else:
+        await store.pool.execute("update messages set deleted_at=now() where message_id='m0'")
+    rows = {r["message_id"]: r for r in await store.list_pending_messages(PV, 3, 10)}
+    assert rows["reply"]["parent_text"] is None and "m0" not in rows

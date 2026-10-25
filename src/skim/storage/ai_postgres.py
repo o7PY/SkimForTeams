@@ -15,6 +15,7 @@ join conversations c on c.id = m.conversation_id and c.team_id is not null and c
 join teams t on t.id = c.team_id and t.removed_at is null
 left join channels ch on ch.id = m.conversation_id
 left join messages p on p.conversation_id = m.conversation_id and p.message_id = m.reply_to_id
+     and p.deleted_at is null
 left join message_analysis a on a.conversation_id = m.conversation_id and a.message_id = m.message_id
      and a.message_version = m.current_version and a.prompt_version = $1
 where m.deleted_at is null
@@ -67,14 +68,20 @@ class PostgresAIMixin:
                         f"""insert into events ({", ".join(_EVENT_COLS)}, source_kind, source_ref)
                             values ({", ".join(f"${i}" for i in range(1, len(_EVENT_COLS) + 3))}) returning id""",
                         *[ev.get(c) for c in _EVENT_COLS], source["kind"], source["ref"])
+                    if ev["team_id"] != source["team_id"]:
+                        raise ValueError("event team differs from the source team")
                 else:
                     eid = op["event_id"]
                     fields = op["fields"]
                     unknown = set(fields) - EVENT_FIELDS
                     assert not unknown, unknown
+                    # An event may only be touched by a source of its own team (P3-D-013), whatever the caller says.
+                    if not await conn.fetchval("select 1 from events where id=$1 and team_id=$2", eid, source["team_id"]):
+                        raise ValueError("event does not belong to the source's team")
                     if fields:
-                        sets = ", ".join(f"{k}=${i}" for i, k in enumerate(fields, 2))
-                        await conn.execute(f"update events set {sets}, updated_at=now() where id=$1", eid, *fields.values())
+                        sets = ", ".join(f"{k}=${i}" for i, k in enumerate(fields, 3))
+                        await conn.execute(f"update events set {sets}, updated_at=now() where id=$1 and team_id=$2",
+                                           eid, source["team_id"], *fields.values())
                 for ch in op["changes"]:
                     await conn.execute(
                         """insert into event_changes (event_id, change_type, old_values, new_values, confidence,

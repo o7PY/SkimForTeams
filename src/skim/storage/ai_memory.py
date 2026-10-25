@@ -33,6 +33,8 @@ class MemoryAIMixin:
             if a and not (a["status"] == "failed" and a["attempts"] < max_attempts):
                 continue
             parent = self.messages.get((cid, m["reply_to_id"])) if m.get("reply_to_id") else None
+            if parent and parent.get("deleted_at"):
+                parent = None  # deleted content never goes to an LLM
             out.append({"conversation_id": cid, "message_id": mid, "version": m["current_version"],
                         "text": m.get("text"), "subject": m.get("subject"), "created_at": m.get("created_at"),
                         "last_edited_at": m.get("last_edited_at"), "from_aad_id": m.get("from_aad_id"),
@@ -62,12 +64,16 @@ class MemoryAIMixin:
         results = []
         for op in ops:
             if op["kind"] == "create":
+                if op["event"]["team_id"] != source["team_id"]:
+                    raise ValueError("event team differs from the source team")
                 self._event_seq += 1
                 eid = self._event_seq
                 self.events[eid] = {"id": eid, "source_kind": source["kind"], "source_ref": source["ref"],
                                     "created_at": now, "updated_at": now, **op["event"]}
             else:
                 eid = op["event_id"]
+                if self.events[eid]["team_id"] != source["team_id"]:
+                    raise ValueError("event does not belong to the source's team")
                 unknown = set(op["fields"]) - EVENT_FIELDS
                 assert not unknown, unknown
                 self.events[eid].update(op["fields"], updated_at=now)
