@@ -134,6 +134,9 @@ def _zip(data: bytes) -> zipfile.ZipFile:
 
 def _text_runs(xml: bytes, para: str, run: str) -> str:
     """Join text runs `run` per paragraph `para` (namespace-agnostic), one paragraph per line."""
+    head = xml[:4096].lower()  # real Office XML never declares a DTD/entity; refusing them blocks XXE and billion-laughs
+    if b"<!doctype" in head or b"<!entity" in xml.lower():
+        raise DocumentSkip("failed", "xml_dtd_refused")
     lines = []
     for p in ET.fromstring(xml).iter():
         if p.tag.endswith("}" + para):

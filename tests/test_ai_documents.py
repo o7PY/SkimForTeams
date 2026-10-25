@@ -282,3 +282,13 @@ async def test_kill_switch_and_run_all_unaffected_without_ai():
     store = await setup(None)
     ctx = JobContext(store, None, Budget(60), ai=None)
     assert await step_ai_documents(ctx, None) == "ok" and ctx.stats["ai_disabled"] == 1
+
+
+def test_xml_with_a_dtd_or_entities_is_refused():
+    """Security review: a crafted DOCX/PPTX must not reach the XML parser's entity expansion (XXE / billion laughs)."""
+    evil = ('<?xml version="1.0"?><!DOCTYPE d [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;">]>'
+            f'<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:t>&b;</w:t></w:r></w:p></w:body></w:document>')
+    for name, data in (("x.docx", _zip({"word/document.xml": evil})), ("x.pptx", _zip({"ppt/slides/slide1.xml": evil}))):
+        with pytest.raises(docs.DocumentSkip) as e:
+            docs.extract(name, data, 10)
+        assert e.value.reason == "xml_dtd_refused" and e.value.status == "failed"
