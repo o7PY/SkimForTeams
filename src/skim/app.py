@@ -92,7 +92,8 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
 
     if settings.api_enabled:  # Phase 4: student app API (P4-D-104); absent (plain 404) otherwise
         assert settings.supabase_url
-        api_routes.register(app, storage, verifier or TokenVerifier(settings.supabase_url, settings.supabase_jwt_secret))
+        api_routes.register(app, storage, verifier or TokenVerifier(settings.supabase_url, settings.supabase_jwt_secret),
+                            staff_aad_ids=settings.staff_aad_ids)
     else:
         log.info("Phase 4 API disabled: API_ENABLED is not set")
 

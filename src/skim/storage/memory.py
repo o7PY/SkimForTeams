@@ -10,9 +10,10 @@ from ..normalize import MessageEvent, has_markup, to_plain_text
 from ..normalize_graph import fill_empty, missing_attachments
 from .ai_memory import MemoryAIMixin
 from .app_memory import MemoryAppMixin, MemoryFeedMixin
+from .deck_memory import MemoryDeckMixin
 
 
-class MemoryStorage(MemoryAIMixin, MemoryAppMixin, MemoryFeedMixin):
+class MemoryStorage(MemoryAIMixin, MemoryAppMixin, MemoryFeedMixin, MemoryDeckMixin):
     def __init__(self) -> None:
         self._init_ai()
         self._init_app()
