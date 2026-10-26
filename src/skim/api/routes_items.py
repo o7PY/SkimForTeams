@@ -60,7 +60,7 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
         """Cards for ids (in that order); folded originals are loaded too and nested under their card."""
         s = await settings_of(uid)
         every = list(dict.fromkeys([*ids, *[f for fs in folded.values() for f in fs]]))
-        ld = await cards.load(storage, uid, every, detail)
+        ld = await cards.load(storage, uid, every, detail, s, now())
         important = set(s["important_types"])
         out = [cards.build_card(ld, i, now=now(), staff_ids=staff_ids, important=important, folded_ids=folded.get(i), detail=detail)
                for i in ids]

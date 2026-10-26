@@ -3,10 +3,11 @@ starred. The original Teams content is always in the card; AI only adds the even
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
-from ..eventtime import IST, event_end, is_over
+from ..eventtime import IST, event_end, is_over, is_upcoming
+from .. import reminders as rem_engine
 from ..feed import author_role, document_actor
 from ..storage.base import Storage
 from .deeplink import teams_message_link
@@ -71,16 +72,6 @@ def star_expires_at(star: dict, events: list[dict]) -> datetime | None:
     return None
 
 
-def reminder_fire_at(r: dict, events: dict[int, dict]) -> datetime | None:
-    """Stored absolute time, or the event start + offset. T6's engine (skim/reminders.py) replaces this with the full rules."""
-    if r.get("fire_at") is not None:
-        return r["fire_at"]
-    e = events.get(r.get("event_id"))
-    if r.get("offset_minutes") is not None and e is not None and e.get("starts_at"):
-        return e["starts_at"] + timedelta(minutes=r["offset_minutes"])
-    return None
-
-
 @dataclass
 class Loaded:
     """Everything needed to render a set of items, fetched in a handful of batched queries."""
@@ -94,11 +85,12 @@ class Loaded:
     channels: dict[str, str]
     stars: dict[int, dict]
     states: dict[int, dict]
-    reminders: dict[int, list[dict]]
+    scheduled: list[rem_engine.Scheduled]
+    rem: dict
     history: dict[int, list[dict]] = field(default_factory=dict)
 
 
-async def load(storage: Storage, user_id: str, item_ids: list[int], detail: bool) -> Loaded:
+async def load(storage: Storage, user_id: str, item_ids: list[int], detail: bool, settings: dict, now: datetime) -> Loaded:
     items = await storage.get_feed_items(item_ids)
     event_ids = sorted({e for it in items.values() for e in it["event_ids"]})
     change_ids = [it["event_change_id"] for it in items.values() if it["kind"] == "change"]
@@ -120,17 +112,18 @@ async def load(storage: Storage, user_id: str, item_ids: list[int], detail: bool
     for tid in team_ids:
         for ch in await storage.list_channels(tid):
             channels[ch["id"]] = ch.get("display_name") or ""
-    reminders: dict[int, list[dict]] = {}
-    for r in await storage.list_reminders(user_id):
-        if r.get("item_id") in items:
-            reminders.setdefault(r["item_id"], []).append(r)
+    # The user's reminders as the engine sees them now (real + automatic), for the whole card set at once
+    user_events = await storage.list_events_for_user(user_id, (now - timedelta(days=2)).astimezone(IST).date())
+    rows = await storage.list_reminders(user_id, include_deleted=True)
+    newest = await storage.latest_items_for_events(user_id, list(user_events)) if user_events else {}
+    scheduled = rem_engine.compute(user_id, rows, user_events, settings, now, item_for_event=newest.get, days=365, cap=10_000)
     return Loaded(
-        items=items, events=events, messages=messages,
+        items=items, events=events | {i: e for i, e in user_events.items() if i in event_ids}, messages=messages,
         files=await storage.get_message_files(sorted(pairs)) if pairs else {},
         doc_cards=await storage.get_document_cards(de_ids) if de_ids else {},
         changes=changes, teams=teams, channels=channels,
         stars=await storage.get_stars(user_id, item_ids), states=await storage.get_item_states(user_id, item_ids),
-        reminders=reminders,
+        scheduled=scheduled, rem=settings["reminders"],
         history=await storage.list_event_history(event_ids) if detail and event_ids else {})
 
 
@@ -194,10 +187,11 @@ def build_card(ld: Loaded, item_id: int, *, now: datetime, staff_ids: frozenset[
     card["user"] = {
         "starred": bool(star and star_active(star, evs, now)),
         "temp_star_expires_at": iso(star_expires_at(star, evs)) if star and star_active(star, evs, now) else None,
-        "reminders": [{"id": r["id"], "kind": r["kind"], "fire_at": iso(reminder_fire_at(r, ld.events))}
-                      for r in ld.reminders.get(item_id, []) if r.get("deleted_at") is None],
+        "reminders": [{"id": r.id, "kind": r.kind, "fire_at": iso(r.fire_at), "virtual": r.virtual}
+                      for r in ld.scheduled if r.item_id == item_id or r.event_id in it["event_ids"]],
         "snoozed_until": iso(st["snoozed_until"]) if st and st["snoozed_until"] and st["snoozed_until"] > now else None}
     if detail:
+        card["recommended_reminders"] = recommended_preview(evs, ld.rem, now)
         card["event_history"] = [
             {"event_id": e["id"], "changes": [{"id": c["id"], "type": c["change_type"], "at": iso(c["at"]),
                                                "before": change_side(c.get("old_values")), "after": change_side(c.get("new_values"))}
@@ -205,3 +199,14 @@ def build_card(ld: Loaded, item_id: int, *, now: datetime, staff_ids: frozenset[
         card["folded"] = [c for c in (build_card(ld, f, now=now, staff_ids=staff_ids, important=important, detail=True)
                                       for f in (folded_ids or [])) if c is not None]
     return card
+
+
+def recommended_preview(evs: list[dict], rem: dict, now: datetime) -> list[dict]:
+    """What 'Recommended reminders' would add for the card's first upcoming dated event, both times shown before adding (P4-D-116).
+    Empty when the card has no such event."""
+    for e in evs:
+        if is_upcoming(e, now) and rem_engine.event_day(e) is not None:
+            t = rem_engine.recommended_times(e, rem)
+            return [{"kind": k, "event_id": e["id"], "fire_at": iso(t[rule]) if t[rule] and t[rule] > now else None}
+                    for k, rule in (("recommended_day_before", rem_engine.DAY_BEFORE), ("recommended_same_day", rem_engine.SAME_DAY))]
+    return []

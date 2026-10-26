@@ -152,7 +152,7 @@ def describe(e: dict | None, fire_at: datetime, fallback_title: str) -> tuple[st
     a = anchor(e)
     day = (start or a).astimezone(IST)
     when = day.strftime("%a %-d %b") + (f", {day.strftime('%H:%M')}" if start else "")
-    gap = (a - fire_at) if a else timedelta(0)
-    lead = "Tomorrow" if gap >= timedelta(hours=18) else "Today"
+    days = (day.date() - fire_at.astimezone(IST).date()).days if a else 0
+    lead = "Today" if days <= 0 else "Tomorrow" if days == 1 else f"In {days} days"
     body = f"{lead}: {when}" + (f" · {e['venue']}" if e.get("venue") else "")
     return e["title"], body

@@ -101,3 +101,19 @@ class MemoryDeckMixin:
             if uid == user_id and st["folded_into"] in parent_ids:
                 out.setdefault(st["folded_into"], []).append(i)
         return out
+
+    async def list_events_for_user(self, user_id: str, since_date) -> dict[int, dict]:
+        subs = self._active_teams(user_id)
+        return {i: dict(e) for i, e in self.events.items()
+                if e["team_id"] in subs and e.get("event_date") is not None and e["event_date"] >= since_date}
+
+    async def latest_items_for_events(self, user_id: str, event_ids: list[int]) -> dict[int, int]:
+        subs = self._active_teams(user_id)
+        best: dict[int, tuple] = {}
+        for iid, eid in self.feed_item_events:
+            f = self.feed_items.get(iid)
+            if eid in event_ids and f and not f["hidden"] and f["team_id"] in subs:
+                k = (f["occurred_at"], iid)
+                if eid not in best or k > best[eid]:
+                    best[eid] = k
+        return {e: k[1] for e, k in best.items()}

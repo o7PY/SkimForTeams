@@ -111,8 +111,9 @@ class MemoryAppMixin:
         for table in (self.user_item_state, self.stars):
             for k in [k for k in table if k[0] == user_id and k[1] in items]:
                 del table[k]
+        events = {i for i, e in self.events.items() if e["team_id"] == team_id}
         self.reminders = {k: v for k, v in self.reminders.items()
-                          if not (v["user_id"] == user_id and v.get("item_id") in items)}
+                          if not (v["user_id"] == user_id and (v.get("item_id") in items or v.get("event_id") in events))}
         return True
 
     # --- feed items ---

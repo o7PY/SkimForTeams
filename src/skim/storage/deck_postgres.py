@@ -120,3 +120,21 @@ class PostgresDeckMixin:
                 "order by item_id", user_id, parent_ids):
             out.setdefault(r["folded_into"], []).append(r["item_id"])
         return out
+
+    async def list_events_for_user(self, user_id: str, since_date) -> dict[int, dict]:
+        """Dated events of the user's active teams on or after `since_date` (what reminders are computed from)."""
+        assert self.pool
+        rows = await self.pool.fetch(
+            """select e.* from events e join subscriptions s on s.team_id = e.team_id and s.user_id = $1 and s.left_at is null
+               where e.event_date >= $2::date""", user_id, since_date)
+        return {r["id"]: dict(r) for r in rows}
+
+    async def latest_items_for_events(self, user_id: str, event_ids: list[int]) -> dict[int, int]:
+        """{event id: the newest visible card the user can open that is linked to it} (what a reminder opens)."""
+        assert self.pool
+        rows = await self.pool.fetch(
+            """select distinct on (fe.event_id) fe.event_id, f.id from feed_item_events fe
+               join feed_items f on f.id = fe.item_id and not f.hidden
+               join subscriptions s on s.team_id = f.team_id and s.user_id = $1 and s.left_at is null
+               where fe.event_id = any($2::bigint[]) order by fe.event_id, f.occurred_at desc, f.id desc""", user_id, event_ids)
+        return {r["event_id"]: r["id"] for r in rows}

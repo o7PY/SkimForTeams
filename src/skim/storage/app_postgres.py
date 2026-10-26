@@ -104,6 +104,8 @@ class PostgresAppMixin:
                 await conn.execute(f"delete from user_item_state where user_id=$1 and item_id in ({items})", user_id, team_id)
                 await conn.execute(f"delete from stars where user_id=$1 and item_id in ({items})", user_id, team_id)
                 await conn.execute(f"delete from reminders where user_id=$1 and item_id in ({items})", user_id, team_id)
+                await conn.execute("delete from reminders where user_id=$1 and event_id in (select id from events where team_id=$2)",
+                                   user_id, team_id)
         return True
 
     # --- feed items ---
