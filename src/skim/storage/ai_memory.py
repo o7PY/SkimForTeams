@@ -295,6 +295,18 @@ class MemoryAIMixin:
                   "message_event_links": sum(1 for k in self.message_event_links.values() if k["event_id"] in eids),
                   "message_analysis": len(akeys), "document_texts": len(dids)}
         if not dry_run:
+            # Phase 4 rows that point at these events/changes (see ai_postgres.reset_ai_data)
+            cids = {c["id"] for c in self.event_changes if c["event_id"] in eids}
+            self.push_outbox = [p for p in self.push_outbox if p["event_change_id"] not in cids]
+            gone = {i for i, f in self.feed_items.items() if f["kind"] == "change" and f["event_change_id"] in cids}
+            for i in gone:
+                del self.feed_items[i]
+            for table in (self.user_item_state, self.stars):
+                for k in [k for k in table if k[1] in gone]:
+                    del table[k]
+            self.feed_item_events = {(i, e) for i, e in self.feed_item_events if i not in gone and e not in eids}
+            self.reminders = {k: v for k, v in self.reminders.items()
+                              if v.get("item_id") not in gone and v.get("event_id") not in eids}
             self.event_changes = [c for c in self.event_changes if c["event_id"] not in eids]
             self.message_event_links = {k: v for k, v in self.message_event_links.items() if v["event_id"] not in eids}
             for i in eids:

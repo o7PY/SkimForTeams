@@ -275,6 +275,13 @@ class PostgresAIMixin:
                 "document_texts": await conn.fetchval(
                     "select count(*)::int from document_texts x join documents d on d.id=x.document_id where d.team_id=$1", team_id)}
             if not dry_run:
+                # Phase 4 rows that point at the events/changes about to go (P4: reminders anchored to an event are
+                # dropped, change cards go with their user state; message/document cards stay and are re-linked).
+                chg = f"select id from event_changes where event_id in ({ev})"
+                await conn.execute(f"delete from push_outbox where event_change_id in ({chg})", team_id)
+                await conn.execute(f"delete from feed_items where kind='change' and event_change_id in ({chg})", team_id)
+                await conn.execute(f"delete from feed_item_events where event_id in ({ev})", team_id)
+                await conn.execute(f"delete from reminders where event_id in ({ev})", team_id)
                 await conn.execute(f"delete from message_event_links where event_id in ({ev})", team_id)
                 await conn.execute(f"delete from event_changes where event_id in ({ev})", team_id)
                 await conn.execute("delete from events where team_id=$1", team_id)
