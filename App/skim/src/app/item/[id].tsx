@@ -12,6 +12,7 @@ import {
 import { useAuth } from '@/lib/auth';
 import { changeSummary, formatWhen, relativeTime } from '@/lib/format';
 import { isPending, recommendedAlreadySet } from '@/lib/item-cache';
+import { haptics } from '@/lib/haptics';
 import { useItemActions, type ActionResult } from '@/lib/item-actions';
 import { itemOptions } from '@/lib/query-options';
 import type { Card } from '@/lib/types';
@@ -19,6 +20,7 @@ import { AppText } from '@/ui/app-text';
 import { IconButton, PrimaryButton, SecondaryButton } from '@/ui/buttons';
 import { DeckCard } from '@/ui/deck-card';
 import { Icon } from '@/ui/icon';
+import { RiseIn } from '@/ui/motion';
 import { Screen } from '@/ui/screen';
 import { OptionRow, SectionLabel, Sheet } from '@/ui/sheet';
 import { TimePicker, type PickerValue } from '@/ui/time-picker';
@@ -69,6 +71,7 @@ export default function Item() {
 
   return (
     <Screen>
+      <RiseIn>
       <View style={styles.top}>
         <AppText variant="headlineSm">{card.kind === 'change' ? 'Date change' : card.kind === 'document' ? 'File' : 'Post'}</AppText>
         <IconButton icon="close" label="Close" onPress={close} />
@@ -85,8 +88,8 @@ export default function Item() {
 
           <OptionRow icon="bell-outline" label="Remind me…" detail="Before the event, or at a time you pick" onPress={() => setSheet('remind')} />
           {card.user.starred
-            ? <OptionRow icon="star" label={starLabel(card)} detail="Tap to remove the star" onPress={() => run(actions.unstar())} selected />
-            : <OptionRow icon="star-outline" label="Star" detail="Keep it in Starred" onPress={() => run(actions.star(null))} />}
+            ? <OptionRow icon="star" label={starLabel(card)} detail="Tap to remove the star" pop onPress={() => { haptics.selection(); void run(actions.unstar()); }} selected />
+            : <OptionRow icon="star-outline" label="Star" detail="Keep it in Starred" onPress={() => { haptics.selection(); void run(actions.star(null)); }} pop />}
           <OptionRow icon="timer-star-outline" label="Temporary star…" detail="Starred for a while" onPress={() => setSheet('star')} />
           <OptionRow icon="clock-outline" label="Snooze…" detail="Bring it back later" onPress={() => setSheet('snooze')} />
           {canCalendar ? <OptionRow icon="calendar-plus" label="Add to calendar" onPress={() => run(actions.addToCalendar().then((r) => r.result))} /> : null}
@@ -138,9 +141,11 @@ export default function Item() {
         </View>
       ) : null}
 
+      </RiseIn>
+
       <RemindSheet visible={sheet === 'remind'} card={card} now={now} onClose={() => setSheet(null)}
         onBefore={(m) => { setSheet(null); void run(actions.remindBefore(m)); }} onAt={(iso) => { setSheet(null); void run(actions.remindAt(iso)); }} />
-      <TempStarSheet visible={sheet === 'star'} card={card} now={now} onClose={() => setSheet(null)} onPick={(t) => { setSheet(null); void run(actions.star(t)); }} />
+      <TempStarSheet visible={sheet === 'star'} card={card} now={now} onClose={() => setSheet(null)} onPick={(t) => { setSheet(null); haptics.selection(); void run(actions.star(t)); }} />
       <SnoozeSheet visible={sheet === 'snooze'} card={card} now={now} onClose={() => setSheet(null)} onPick={(until, label) => { setSheet(null); void run(actions.snooze(until, label)); }} />
     </Screen>
   );

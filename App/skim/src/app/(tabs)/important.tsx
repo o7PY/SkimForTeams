@@ -7,6 +7,7 @@ import { EVENT_TYPE_LABEL } from '@/lib/format';
 import { EVENT_TYPES, toggleType } from '@/lib/settings';
 import { useSettings } from '@/lib/use-settings';
 import { AppText } from '@/ui/app-text';
+import { Reveal } from '@/ui/motion';
 import { CheckRow, SwitchRow } from '@/ui/rows';
 import { TabScreen } from '@/ui/tab-screen';
 
@@ -25,9 +26,11 @@ export default function Important() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <AppText variant="body" color={t.textSecondary}>Ticked kinds are shown in red, and can remind you and alert you when their date changes.</AppText>
         <View style={styles.list}>
-          {EVENT_TYPES.map((t) => (
-            <CheckRow key={t} type={t} label={EVENT_TYPE_LABEL[t]} detail={DESCRIPTION[t]} checked={settings.important_types.includes(t)}
+          {EVENT_TYPES.map((t, i) => (
+            <Reveal key={t} scope="important" index={i}>
+            <CheckRow type={t} label={EVENT_TYPE_LABEL[t]} detail={DESCRIPTION[t]} checked={settings.important_types.includes(t)}
               onChange={() => void update({ important_types: toggleType(settings.important_types, t) })} />
+            </Reveal>
           ))}
         </View>
         <SwitchRow

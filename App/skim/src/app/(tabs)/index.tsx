@@ -1,7 +1,8 @@
-// The deck (home). Swipe left = read, right = options (opens the card); the buttons below do the same for anyone who cannot swipe.
+// The deck (home). Swipe left = dismiss, right = open the card; the buttons below do the same for anyone who cannot swipe.
 import { Redirect, router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { makeStyles, radius, space, useTheme } from '@/constants/theme';
 import { useDeck, useDeckActions } from '@/lib/deck';
@@ -10,6 +11,7 @@ import type { Card } from '@/lib/types';
 import { AppText } from '@/ui/app-text';
 import { IconButton, PrimaryButton, TextButton } from '@/ui/buttons';
 import { Icon } from '@/ui/icon';
+import { useToastMotion } from '@/ui/motion';
 import { NotificationsBanner } from '@/ui/notifications-banner';
 import { TabScreen } from '@/ui/tab-screen';
 import { SwipeDeck, type SwipeDeckHandle } from '@/ui/swipe-deck';
@@ -20,6 +22,7 @@ const PREFETCH_WHEN_FEWER_THAN = 8;
 export default function DeckScreen() {
   const styles = useStyles();
   const t = useTheme();
+  const toastMotion = useToastMotion();
   const subs = useSubscriptions();
   const deck = useDeck();
   const actions = useDeckActions();
@@ -104,10 +107,10 @@ export default function DeckScreen() {
       ) : null}
 
       {undoable ? (
-        <View accessibilityLiveRegion="polite" style={styles.toast}>
+        <Animated.View accessibilityLiveRegion="polite" entering={toastMotion.entering} exiting={toastMotion.exiting} style={styles.toast}>
           <AppText variant="label" color={t.textSecondary}>Marked as read</AppText>
           <TextButton label="Undo" onPress={undo} />
-        </View>
+        </Animated.View>
       ) : null}
     </TabScreen>
   );

@@ -33,12 +33,12 @@ function Routes({ ready }: { ready: boolean }) {
     <>
       <NotificationsRuntime />
       <OfflineSync />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.background }, animation: 'fade_from_bottom' }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.background }, animation: 'fade', animationDuration: 200 }}>
         <Stack.Protected guard={status === 'signedIn'}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="join" />
           <Stack.Screen name="settings" />
-          <Stack.Screen name="item/[id]" />
+          <Stack.Screen name="item/[id]" options={{ animation: 'none' }} />
         </Stack.Protected>
         <Stack.Protected guard={status === 'signedOut'}>
           <Stack.Screen name="sign-in" />

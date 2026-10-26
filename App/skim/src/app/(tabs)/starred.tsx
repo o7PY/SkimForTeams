@@ -6,6 +6,8 @@ import { makeStyles, space, useTheme } from '@/constants/theme';
 import { starExpiryLabel } from '@/lib/format';
 import { useListActions, useStarred } from '@/lib/lists';
 import { AppText } from '@/ui/app-text';
+import { haptics } from '@/lib/haptics';
+import { Reveal } from '@/ui/motion';
 import { CardRow, Empty } from '@/ui/rows';
 import { TabScreen } from '@/ui/tab-screen';
 
@@ -32,14 +34,16 @@ export default function Starred() {
           refreshControl={<RefreshControl refreshing={s.isRefetching} onRefresh={() => void s.refetch()} tintColor={t.primary} colors={[t.primary]} progressBackgroundColor={t.surfaceRaised} />}
           ListHeaderComponent={failed ? <AppText variant="body" color={t.warning}>Can’t load your stars. Pull down to try again.</AppText> : undefined}
           ListEmptyComponent={failed ? undefined : <Empty icon="star-outline" title="No stars yet" text="Open a card and tap Star to keep it here, or star it for a day or a week." />}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
+            <Reveal scope="starred" index={index}>
             <CardRow
               card={item}
               now={now}
               showExpiry
               onOpen={() => router.push({ pathname: '/item/[id]', params: { id: String(item.id) } })}
-              action={{ icon: 'star-off-outline', label: 'Remove star', onPress: () => void actions.unstar(item) }}
+              action={{ icon: 'star-off-outline', label: 'Remove star', onPress: () => { haptics.selection(); void actions.unstar(item); } }}
             />
+            </Reveal>
           )}
         />
       )}

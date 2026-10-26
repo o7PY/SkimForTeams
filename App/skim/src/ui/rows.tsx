@@ -2,11 +2,13 @@
 import { Pressable, Switch, View } from 'react-native';
 
 import { makeStyles, radius, space, useTheme } from '@/constants/theme';
+import { haptics } from '@/lib/haptics';
 import { cardTitle, EVENT_TYPE_LABEL, importantEvent, relativeTime, starExpiryLabel } from '@/lib/format';
 import type { Card } from '@/lib/types';
 import { AppText } from './app-text';
 import { IconButton } from './buttons';
 import { Icon, type IconName } from './icon';
+import { Pop } from './motion';
 import { TypeChip } from './type-chip';
 
 const KIND_ICON: Record<Card['kind'], IconName> = { message: 'message-text-outline', document: 'file-document-outline', change: 'calendar-clock-outline' };
@@ -59,7 +61,7 @@ export function SwitchRow({ label, detail, value, onChange, disabled }: { label:
         <AppText variant="label">{label}</AppText>
         {detail ? <AppText variant="caption" color={t.textSecondary}>{detail}</AppText> : null}
       </View>
-      <Switch accessibilityLabel={label} value={value} disabled={disabled} onValueChange={onChange}
+      <Switch accessibilityLabel={label} value={value} disabled={disabled} onValueChange={(v) => { haptics.selection(); onChange(v); }}
         trackColor={{ false: t.border, true: t.switchOn }} thumbColor={value ? t.primary : t.switchThumbOff} />
     </View>
   );
@@ -69,9 +71,9 @@ export function CheckRow({ label, detail, checked, onChange, type }: { label: st
   const styles = useStyles();
   const t = useTheme();
   return (
-    <Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked }} onPress={() => onChange(!checked)}
+    <Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked }} onPress={() => { haptics.selection(); onChange(!checked); }}
       style={({ pressed }) => [styles.row, checked && styles.rowOn, pressed && { opacity: 0.7 }]}>
-      <Icon name={checked ? 'checkbox-marked' : 'checkbox-blank-outline'} size={26} color={checked ? t.primary : t.textSecondary} />
+      <Pop trigger={checked} kind="tick"><Icon name={checked ? 'checkbox-marked' : 'checkbox-blank-outline'} size={26} color={checked ? t.primary : t.textSecondary} /></Pop>
       <View style={styles.flex}>
         {type ? <View style={styles.chipLine}><TypeChip type={type} label={label} /></View> : <AppText variant="label">{label}</AppText>}
         {detail ? <AppText variant="caption" color={t.textSecondary}>{detail}</AppText> : null}

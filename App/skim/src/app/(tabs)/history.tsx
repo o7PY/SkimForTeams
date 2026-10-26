@@ -6,6 +6,7 @@ import { makeStyles, space, useTheme } from '@/constants/theme';
 import { useListActions, useHistory } from '@/lib/lists';
 import { useSettings } from '@/lib/use-settings';
 import { AppText } from '@/ui/app-text';
+import { Reveal } from '@/ui/motion';
 import { CardRow, Empty } from '@/ui/rows';
 import { TabScreen } from '@/ui/tab-screen';
 
@@ -31,7 +32,8 @@ export default function History() {
           refreshControl={<RefreshControl refreshing={h.isRefetching} onRefresh={() => void h.refetch()} tintColor={t.primary} colors={[t.primary]} progressBackgroundColor={t.surfaceRaised} />}
           ListHeaderComponent={failed ? <AppText variant="body" color={t.warning}>Can’t load your history. Pull down to try again.</AppText> : undefined}
           ListEmptyComponent={failed ? undefined : <Empty icon="history" title="Nothing here yet" text="Cards you swipe away show up here, so you can put one back." />}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
+            <Reveal scope="history" index={index}>
             <CardRow
               card={item}
               now={now}
@@ -39,6 +41,7 @@ export default function History() {
               onOpen={() => router.push({ pathname: '/item/[id]', params: { id: String(item.id) } })}
               action={{ icon: 'undo-variant', label: 'Put back in the deck', onPress: () => void actions.putBack(item) }}
             />
+            </Reveal>
           )}
         />
       )}

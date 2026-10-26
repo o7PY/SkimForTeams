@@ -9,6 +9,7 @@ import { keyboardOverlap, sheetLayout } from '@/lib/sheet-layout';
 import { AppText } from './app-text';
 import { IconButton } from './buttons';
 import { Icon, type IconName } from './icon';
+import { Pop } from './motion';
 
 const SETTLE_MS = 150; // let the window finish any resize of its own before measuring what the keyboard still covers
 
@@ -66,13 +67,13 @@ export function Sheet({ visible, title, onClose, children }: { visible: boolean;
   );
 }
 
-export function OptionRow({ icon, label, detail, onPress, disabled, selected }: { icon?: IconName; label: string; detail?: string; onPress(): void; disabled?: boolean; selected?: boolean }) {
+export function OptionRow({ icon, label, detail, onPress, disabled, selected, pop }: { icon?: IconName; label: string; detail?: string; onPress(): void; disabled?: boolean; selected?: boolean; pop?: boolean }) {
   const styles = useStyles();
   const t = useTheme();
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={detail ? `${label}, ${detail}` : label} accessibilityState={{ disabled: !!disabled, selected: !!selected }} disabled={disabled} onPress={onPress}
       style={({ pressed }) => [styles.row, selected && styles.rowOn, (pressed || disabled) && { opacity: 0.6 }]}>
-      {icon ? <Icon name={icon} size={22} color={selected ? t.primary : t.textSecondary} /> : null}
+      {icon ? (pop ? <Pop trigger={!!selected} kind="pop"><Icon name={icon} size={22} color={selected ? t.primary : t.textSecondary} /></Pop> : <Icon name={icon} size={22} color={selected ? t.primary : t.textSecondary} />) : null}
       <View style={styles.rowText}>
         <AppText variant="label">{label}</AppText>
         {detail ? <AppText variant="caption" color={t.textSecondary}>{detail}</AppText> : null}

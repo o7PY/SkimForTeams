@@ -7,21 +7,16 @@ import { cardBody, cardTitle, changeSummary, eventLine, hasUnconfirmed, importan
 import type { Card } from '@/lib/types';
 import { AppText } from './app-text';
 import { Icon, type IconName } from './icon';
-import { eventIcon, TypeChip } from './type-chip';
+import { ChipBody, eventIcon, TypeChip } from './type-chip';
 
 const KIND_ICON: Record<Card['kind'], IconName> = { message: 'message-text-outline', document: 'file-document-outline', change: 'calendar-clock-outline' };
 const MAX_FILES = 3;
 
 export function Pill({ text, tone = 'primary' }: { text: string; tone?: 'primary' | 'important' | 'warning' | 'update' | 'muted' }) {
   const t = useTheme();
-  const styles = useStyles();
   const fg = { primary: t.primary, important: t.important.text, warning: t.warning, update: t.update, muted: t.textSecondary }[tone];
   const bg = tone === 'important' ? tint(t.important.border, t.important.fill, 0.25) : tone === 'muted' ? t.inset : toneOf(t, fg).bg;
-  return (
-    <View style={[styles.pill, { backgroundColor: bg }]}>
-      <AppText variant="micro" color={fg}>{text}</AppText>
-    </View>
-  );
+  return <ChipBody bg={bg} fg={fg} text={text} />;
 }
 
 export function DeckCard({ card, detail = false, now = new Date() }: { card: Card; detail?: boolean; now?: Date }) {
@@ -132,7 +127,6 @@ const useStyles = makeStyles((t) => ({
   teamDot: { width: 10, height: 10, borderRadius: 5 },
   iconWrap: { width: 36, height: 36, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  pill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm },
   title: { marginTop: 2 },
   change: { backgroundColor: tint(t.update, t.surfaceRaised, 0.12), borderColor: tint(t.update, t.surfaceRaised, 0.35), borderWidth: 1, borderRadius: radius.md, padding: space.md - 2, gap: 6 },
   changeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.sm },
