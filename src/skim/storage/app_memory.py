@@ -19,6 +19,7 @@ class MemoryAppMixin:
         self.reminders: dict[str, dict] = {}
         self.devices: dict[str, dict] = {}  # by token
         self.push_outbox: list[dict] = []
+        self.auth_deleted: set[str] = set()  # stands in for deleted rows of Supabase's auth.users
         self._feed_seq = 0
         self._device_seq = 0
         self._push_seq = 0
@@ -55,6 +56,14 @@ class MemoryAppMixin:
         self.devices = {k: v for k, v in self.devices.items() if v["user_id"] != user_id}
         self.push_outbox = [p for p in self.push_outbox if p["user_id"] != user_id]
         return True
+
+    async def auth_user_exists(self, user_id: str) -> bool:
+        return user_id not in self.auth_deleted
+
+    async def delete_auth_user(self, user_id: str) -> bool:
+        existed = user_id not in self.auth_deleted
+        self.auth_deleted.add(user_id)
+        return existed
 
     # --- joining ---
     async def get_team_by_code(self, code: str) -> dict | None:

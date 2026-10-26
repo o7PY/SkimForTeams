@@ -40,6 +40,20 @@ class PostgresAppMixin:
         assert self.pool
         return (await self.pool.execute("delete from app_users where id=$1", user_id)) == "DELETE 1"
 
+    async def auth_user_exists(self, user_id: str) -> bool:
+        """Is this user still in Supabase auth? True when there is no auth schema (local/test databases)."""
+        assert self.pool
+        if not await self.pool.fetchval("select to_regclass('auth.users') is not null"):
+            return True
+        return await self.pool.fetchval("select exists (select 1 from auth.users where id=$1)", user_id)
+
+    async def delete_auth_user(self, user_id: str) -> bool:
+        """Delete the Supabase auth user by SQL (P4-D-134, spike S5). False if there was none (or no auth schema)."""
+        assert self.pool
+        if not await self.pool.fetchval("select to_regclass('auth.users') is not null"):
+            return False
+        return (await self.pool.execute("delete from auth.users where id=$1", user_id)) == "DELETE 1"
+
     # --- joining ---
     async def get_team_by_code(self, code: str) -> dict | None:
         assert self.pool

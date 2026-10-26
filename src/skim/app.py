@@ -11,6 +11,8 @@ from microsoft_agents.authentication.msal import MsalConnectionManager
 from microsoft_agents.hosting.aiohttp import CloudAdapter, jwt_authorization_decorator, start_agent_process
 
 from . import debug_api, jobs_api
+from .api import routes as api_routes
+from .api.auth import TokenVerifier
 from .bot import Sender, build_agent, current_capture, ingest, setup_activity_logger
 from .config import Settings
 from .schema import schema_status
@@ -37,7 +39,8 @@ def make_storage(settings: Settings) -> Storage:
 
 
 def create_app(settings: Settings, storage: Storage | None = None, sender: Sender | None = None,
-               graph: GraphClient | None = None, ai: "AIServices | None | str" = "auto") -> web.Application:
+               graph: GraphClient | None = None, ai: "AIServices | None | str" = "auto",
+               verifier: TokenVerifier | None = None) -> web.Application:
     setup_activity_logger()
     storage = storage or make_storage(settings)
     connections = MsalConnectionManager(**settings.sdk_config)
@@ -86,6 +89,12 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
     app.router.add_get("/health", health)
     if settings.debug_token:
         debug_api.register(app, storage, settings.debug_token, ai)
+
+    if settings.api_enabled:  # Phase 4: student app API (P4-D-104); absent (plain 404) otherwise
+        assert settings.supabase_url
+        api_routes.register(app, storage, verifier or TokenVerifier(settings.supabase_url, settings.supabase_jwt_secret))
+    else:
+        log.info("Phase 4 API disabled: API_ENABLED is not set")
 
     own_graph = False
     if settings.jobs_token and graph is None and settings.graph_credentials:

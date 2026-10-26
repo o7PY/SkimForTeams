@@ -59,6 +59,9 @@ Extra environment (all optional; without Graph credentials or `JOBS_TOKEN` the `
 | `BACKFILL_SINCE_DAYS` | 180 | How far back message history is read |
 | `BACKFILL_MAX_MESSAGES_PER_CHANNEL` | 2000 | Cap per channel |
 | `GRAPH_BASE_URL` | Graph v1.0 | Tests only |
+| `API_ENABLED` | false | Student app API under `/api/v1` (Phase 4); needs `SUPABASE_URL`, else the paths are plain 404s |
+| `SUPABASE_URL` | unset | `https://<ref>.supabase.co`; access tokens are verified against its JWKS |
+| `SUPABASE_JWT_SECRET` | unset | Legacy HS256 secret, used only for tokens that say HS256 (use Secret Manager) |
 
 Graph needs the bot's app registration to have the application roles `Channel.ReadBasic.All`, `Files.Read.All`,
 `Group.Selected`, `Team.ReadBasic.All` (admin consent), and the team to be granted via RSC.

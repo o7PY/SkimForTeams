@@ -36,6 +36,10 @@ class Settings:
     job_time_budget_seconds: float = 240.0
     backfill_since_days: int = 180
     backfill_max_messages_per_channel: int = 2000
+    # Phase 4 student API (P4-D-104). Off unless API_ENABLED; then SUPABASE_URL is required.
+    api_enabled: bool = False
+    supabase_url: str | None = None
+    supabase_jwt_secret: str | None = field(default=None, repr=False)  # legacy HS256 fallback only
     # Passed to the SDK's MsalConnectionManager / AgentApplication.
     sdk_config: dict = field(default_factory=dict, repr=False)
 
@@ -80,6 +84,10 @@ class Settings:
         budget = num("JOB_TIME_BUDGET_SECONDS", 240.0, float, 1)
         since_days = num("BACKFILL_SINCE_DAYS", 180, int, 1)
         max_msgs = num("BACKFILL_MAX_MESSAGES_PER_CHANNEL", 2000, int, 1)
+        api_enabled = _flag(env, "API_ENABLED", False)
+        supabase_url = (env.get("SUPABASE_URL") or "").strip().rstrip("/") or None
+        if api_enabled and not (supabase_url and supabase_url.startswith("https://")):
+            problems.append("SUPABASE_URL (https://<ref>.supabase.co) is required when API_ENABLED=true")
         creds = tuple(env.get(_PREFIX + k, "") for k in ("CLIENTID", "CLIENTSECRET", "TENANTID"))
         graph_credentials = creds if all(creds) and not anonymous else None
         if problems:
@@ -109,5 +117,8 @@ class Settings:
             job_time_budget_seconds=budget,
             backfill_since_days=since_days,
             backfill_max_messages_per_channel=max_msgs,
+            api_enabled=api_enabled,
+            supabase_url=supabase_url,
+            supabase_jwt_secret=env.get("SUPABASE_JWT_SECRET") or None,
             sdk_config=load_configuration_from_env(sdk_env),
         )
