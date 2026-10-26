@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 import { makeStyles, radius, space, tint, useTheme } from '@/constants/theme';
 import {
@@ -22,6 +22,7 @@ import { DeckCard } from '@/ui/deck-card';
 import { Icon } from '@/ui/icon';
 import { RiseIn } from '@/ui/motion';
 import { Screen } from '@/ui/screen';
+import { DeckSkeleton, ErrorState } from '@/ui/states';
 import { OptionRow, SectionLabel, Sheet } from '@/ui/sheet';
 import { TimePicker, type PickerValue } from '@/ui/time-picker';
 
@@ -55,7 +56,7 @@ export default function Item() {
       <Screen>
         <View style={styles.top}><IconButton icon="close" label="Close" onPress={close} /></View>
         <View style={styles.center}>
-          {q.isPending && !q.data ? <ActivityIndicator color={t.primary} /> : <AppText variant="body" color={t.textSecondary}>This card isn’t available.</AppText>}
+          {q.isPending && !q.data ? <DeckSkeleton /> : <ErrorState title="This card isn’t available" text="It may have been removed, or you may be offline." onRetry={() => void q.refetch()} />}
         </View>
       </Screen>
     );

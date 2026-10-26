@@ -57,7 +57,7 @@ function Stepper({ label, text, onUp, onDown }: { label: string; text: string; o
 const useStyles = makeStyles((t) => ({
   wrap: { gap: space.md },
   days: { gap: space.sm },
-  day: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.md, backgroundColor: t.inset, borderWidth: 1, borderColor: t.border },
+  day: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.md, backgroundColor: t.inset, borderWidth: 1, borderColor: t.border },
   dayOn: { borderColor: t.primary, backgroundColor: t.primarySoft },
   time: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.md },
   stepper: { alignItems: 'center', gap: 4 },

@@ -27,6 +27,7 @@ jest.mock('react-native-reanimated', () => {
     withTiming: land,
     withSpring: land,
     withSequence: (...steps) => steps[steps.length - 1],
+    withRepeat: (animation) => animation,
     Easing: { out: (f) => f, quad: (v) => v },
     Extrapolation: { CLAMP: 'clamp' },
     interpolate: (v, input, output) => {
@@ -41,4 +42,10 @@ jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(() => Promise.resolve()),
   selectionAsync: jest.fn(() => Promise.resolve()),
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+}));
+// Online by default (the offline banner reads it); tests that care mock expo-network themselves.
+jest.mock('expo-network', () => ({
+  useNetworkState: () => ({ isConnected: true, isInternetReachable: true }),
+  getNetworkStateAsync: () => Promise.resolve({ isConnected: true, isInternetReachable: true }),
+  addNetworkStateListener: () => ({ remove: () => {} }),
 }));

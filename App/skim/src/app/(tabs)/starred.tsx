@@ -1,13 +1,13 @@
 // Starred (PHASE4.md 7.2 item 6): permanent stars, and temporary ones with how long they have left.
 import { router } from 'expo-router';
-import { ActivityIndicator, FlatList, RefreshControl, View } from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 
 import { makeStyles, space, useTheme } from '@/constants/theme';
 import { starExpiryLabel } from '@/lib/format';
 import { useListActions, useStarred } from '@/lib/lists';
-import { AppText } from '@/ui/app-text';
 import { haptics } from '@/lib/haptics';
 import { Reveal } from '@/ui/motion';
+import { ErrorState, RowSkeletons } from '@/ui/states';
 import { CardRow, Empty } from '@/ui/rows';
 import { TabScreen } from '@/ui/tab-screen';
 
@@ -24,7 +24,7 @@ export default function Starred() {
   return (
     <TabScreen title="Starred" subtitle={cards.length ? `${cards.length} saved` : undefined}>
       {s.isPending && !s.data ? (
-        <View style={styles.center}><ActivityIndicator color={t.primary} /></View>
+        <RowSkeletons />
       ) : (
         <FlatList
           data={cards}
@@ -32,8 +32,7 @@ export default function Starred() {
           contentContainerStyle={cards.length ? styles.list : styles.fill}
           ItemSeparatorComponent={() => <View style={styles.gap} />}
           refreshControl={<RefreshControl refreshing={s.isRefetching} onRefresh={() => void s.refetch()} tintColor={t.primary} colors={[t.primary]} progressBackgroundColor={t.surfaceRaised} />}
-          ListHeaderComponent={failed ? <AppText variant="body" color={t.warning}>Can’t load your stars. Pull down to try again.</AppText> : undefined}
-          ListEmptyComponent={failed ? undefined : <Empty icon="star-outline" title="No stars yet" text="Open a card and tap Star to keep it here, or star it for a day or a week." />}
+          ListEmptyComponent={failed ? <ErrorState title="Can’t load your stars" text="Check your connection, then try again." onRetry={() => void s.refetch()} /> : <Empty icon="star-outline" title="No stars yet" text="Open a card and tap Star to keep it here, or star it for a day or a week." />}
           renderItem={({ item, index }) => (
             <Reveal scope="starred" index={index}>
             <CardRow

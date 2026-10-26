@@ -59,7 +59,7 @@ describe('History', () => {
     const t = words(r);
     expect(t).toContain('Quiz 1 is on Monday');
     expect(t).toContain('Syllabus v2.pdf');
-    expect(t).toContain('Marked as read');
+    expect(t).toContain('Dismissed');
     expect(t).toContain('Opened');
     press(r, 'Put back in the deck');
     expect(mockPutBack).toHaveBeenCalledWith(a);

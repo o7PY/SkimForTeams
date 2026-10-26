@@ -106,7 +106,7 @@ const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', gap: space.md },
   input: {
-    height: 64, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceRaised,
+    minHeight: 64, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceRaised,
     color: t.textPrimary, fontFamily: 'Manrope_700Bold', fontSize: 28, letterSpacing: 6, textAlign: 'center', paddingHorizontal: space.md,
   },
   actions: { gap: space.sm, paddingBottom: space.md, alignItems: 'stretch' },

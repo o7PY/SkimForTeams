@@ -1,12 +1,12 @@
 // History (PHASE4.md 7.2 item 5): the cards the student swiped, newest swipe first, each with "Put back".
 import { router } from 'expo-router';
-import { ActivityIndicator, FlatList, RefreshControl, View } from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 
 import { makeStyles, space, useTheme } from '@/constants/theme';
 import { useListActions, useHistory } from '@/lib/lists';
 import { useSettings } from '@/lib/use-settings';
-import { AppText } from '@/ui/app-text';
 import { Reveal } from '@/ui/motion';
+import { ErrorState, RowSkeletons } from '@/ui/states';
 import { CardRow, Empty } from '@/ui/rows';
 import { TabScreen } from '@/ui/tab-screen';
 
@@ -22,7 +22,7 @@ export default function History() {
   return (
     <TabScreen title="History" subtitle={`Your last ${settings.history_limit} cards`}>
       {h.isPending && !h.data ? (
-        <View style={styles.center}><ActivityIndicator color={t.primary} /></View>
+        <RowSkeletons />
       ) : (
         <FlatList
           data={h.cards}
@@ -30,14 +30,13 @@ export default function History() {
           contentContainerStyle={h.cards.length ? styles.list : styles.fill}
           ItemSeparatorComponent={() => <View style={styles.gap} />}
           refreshControl={<RefreshControl refreshing={h.isRefetching} onRefresh={() => void h.refetch()} tintColor={t.primary} colors={[t.primary]} progressBackgroundColor={t.surfaceRaised} />}
-          ListHeaderComponent={failed ? <AppText variant="body" color={t.warning}>Can’t load your history. Pull down to try again.</AppText> : undefined}
-          ListEmptyComponent={failed ? undefined : <Empty icon="history" title="Nothing here yet" text="Cards you swipe away show up here, so you can put one back." />}
+          ListEmptyComponent={failed ? <ErrorState title="Can’t load your history" text="Check your connection, then try again." onRetry={() => void h.refetch()} /> : <Empty icon="history" title="Nothing here yet" text="Cards you swipe away show up here, so you can put one back." />}
           renderItem={({ item, index }) => (
             <Reveal scope="history" index={index}>
             <CardRow
               card={item}
               now={now}
-              note={item.swiped?.state === 'opened' ? 'Opened' : 'Marked as read'}
+              note={item.swiped?.state === 'opened' ? 'Opened' : 'Dismissed'}
               onOpen={() => router.push({ pathname: '/item/[id]', params: { id: String(item.id) } })}
               action={{ icon: 'undo-variant', label: 'Put back in the deck', onPress: () => void actions.putBack(item) }}
             />

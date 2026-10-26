@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { AppText } from './app-text';
 import { IconButton } from './buttons';
 import { Screen } from './screen';
+import { OfflineBanner } from './states';
 
 /** Room under the content for the floating tab bar (64 high + 16 inset + 16 breathing space). */
 export const TAB_BAR_ROOM = 96;
@@ -23,6 +24,7 @@ export function TabScreen({ title, subtitle, children }: { title: string; subtit
         </View>
         <IconButton icon="cog-outline" label="Settings" onPress={() => router.push('/settings')} />
       </View>
+      <OfflineBanner />
       <View style={styles.body}>{children}</View>
     </Screen>
   );

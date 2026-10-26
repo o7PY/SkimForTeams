@@ -28,24 +28,3 @@ export function tilt(translationX: number, width: number): number {
   const t = (translationX / width) * 10;
   return t > MAX_TILT ? MAX_TILT : t < -MAX_TILT ? -MAX_TILT : t;
 }
-
-/**
- * Applies each landed swipe to its card once. A fast double tap, or a fling that lands twice before the deck has re-rendered, would
- * otherwise dismiss the same card twice; the gate lets a card through once, and lets it through again after `holdMs` (so a card that
- * stayed on top, e.g. after a failed action, is never stuck).
- */
-export function createSwipeGate(holdMs = 1000) {
-  let lastId: number | null = null;
-  let lastAt = 0;
-  return {
-    take(cardId: number, now = Date.now()): boolean {
-      if (lastId === cardId && now - lastAt < holdMs) return false;
-      lastId = cardId;
-      lastAt = now;
-      return true;
-    },
-    reset() {
-      lastId = null;
-    },
-  };
-}

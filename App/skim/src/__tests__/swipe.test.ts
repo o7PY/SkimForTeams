@@ -1,4 +1,4 @@
-import { createSwipeGate, MAX_TILT, stampProgress, swipeOutcome, tilt } from '@/lib/swipe';
+import { MAX_TILT, stampProgress, swipeOutcome, tilt } from '@/lib/swipe';
 
 const W = 400; // 35% = 140
 
@@ -38,21 +38,4 @@ test('tilt follows the drag and never exceeds 8 degrees', () => {
 test('a flick commits with far less travel than a slow drag needs', () => {
   expect(swipeOutcome(-30, -1200, W)).toBe('dismiss'); // 7.5% of the width, fast
   expect(swipeOutcome(-30, -100, W)).toBe('none'); // the same distance, slowly
-});
-
-describe('the swipe gate', () => {
-  test('lets a card through once, however many times it lands', () => {
-    const gate = createSwipeGate();
-    expect(gate.take(1, 0)).toBe(true);
-    expect(gate.take(1, 10)).toBe(false);
-    expect(gate.take(1, 500)).toBe(false);
-  });
-  test('lets the next card through straight away, and the same card again after the hold or a reset (undo)', () => {
-    const gate = createSwipeGate(1000);
-    expect(gate.take(1, 0)).toBe(true);
-    expect(gate.take(2, 5)).toBe(true);
-    expect(gate.take(2, 1006)).toBe(true); // a card that stayed on top is not stuck
-    gate.reset();
-    expect(gate.take(2, 1007)).toBe(true); // put back by Undo, swiped again
-  });
 });

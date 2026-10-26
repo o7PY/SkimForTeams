@@ -28,9 +28,11 @@ export function variantStyle(v: Variant): TextStyle {
 
 export type AppTextProps = TextProps & { variant?: Variant; color?: string };
 
+export const MAX_FONT_SCALE = 1.3; // text grows with the phone's setting up to 130%; layouts are built to hold that
+
 export function AppText({ variant = 'body', color, style, ...rest }: AppTextProps) {
   const t = useTheme();
-  return <Text {...rest} style={[styles.base, variantStyle(variant), { color: color ?? t.textPrimary }, style]} />;
+  return <Text maxFontSizeMultiplier={MAX_FONT_SCALE} {...rest} style={[styles.base, variantStyle(variant), { color: color ?? t.textPrimary }, style]} />;
 }
 
 const styles = StyleSheet.create({ base: { includeFontPadding: false } });

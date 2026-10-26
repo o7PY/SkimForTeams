@@ -1,7 +1,7 @@
 // The deck (home). Swipe left = dismiss, right = open the card; the buttons below do the same for anyone who cannot swipe.
 import { Redirect, router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import { makeStyles, radius, space, useTheme } from '@/constants/theme';
@@ -10,7 +10,7 @@ import { useSubscriptions } from '@/lib/queries';
 import type { Card } from '@/lib/types';
 import { AppText } from '@/ui/app-text';
 import { IconButton, PrimaryButton, TextButton } from '@/ui/buttons';
-import { Icon } from '@/ui/icon';
+import { CaughtUpArt, DeckSkeleton, ErrorState } from '@/ui/states';
 import { useToastMotion } from '@/ui/motion';
 import { NotificationsBanner } from '@/ui/notifications-banner';
 import { TabScreen } from '@/ui/tab-screen';
@@ -81,16 +81,12 @@ export default function DeckScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={pulling} onRefresh={refresh} tintColor={t.primary} colors={[t.primary]} progressBackgroundColor={t.surfaceRaised} />}>
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={t.primary} /></View>
+          <DeckSkeleton />
         ) : failed ? (
-          <View style={styles.center}>
-            <Icon name="cloud-off-outline" size={40} color={t.textSecondary} />
-            <AppText variant="headlineSm">Can’t load your deck</AppText>
-            <AppText variant="body" color={t.textSecondary} style={styles.centerText}>Check your connection, then pull down to try again.</AppText>
-          </View>
+          <ErrorState title="Can’t load your deck" text="Check your connection, then try again." onRetry={() => void deck.refetch()} />
         ) : cards.length === 0 ? (
           <View style={styles.center}>
-            <Icon name="check-circle-outline" size={56} color={t.primary} />
+            <CaughtUpArt />
             <AppText variant="headlineMd">All caught up</AppText>
             <AppText variant="body" color={t.textSecondary} style={styles.centerText}>New posts, files and date changes from your courses will show up here.</AppText>
           </View>
@@ -101,14 +97,14 @@ export default function DeckScreen() {
 
       {cards.length > 0 ? (
         <View style={styles.actions}>
-          <IconButton icon="close" label="Mark as read" size={56} onPress={() => handle.current?.fling('dismiss')} />
+          <IconButton icon="close" label="Dismiss" size={56} onPress={() => handle.current?.fling('dismiss')} />
           <PrimaryButton label="Open" icon="gesture-swipe-right" style={styles.openButton} onPress={() => handle.current?.fling('open')} />
         </View>
       ) : null}
 
       {undoable ? (
         <Animated.View accessibilityLiveRegion="polite" entering={toastMotion.entering} exiting={toastMotion.exiting} style={styles.toast}>
-          <AppText variant="label" color={t.textSecondary}>Marked as read</AppText>
+          <AppText variant="label" color={t.textSecondary}>Dismissed</AppText>
           <TextButton label="Undo" onPress={undo} />
         </Animated.View>
       ) : null}

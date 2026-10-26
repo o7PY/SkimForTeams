@@ -18,10 +18,11 @@ import { useDeleteAccount, useTeamActions } from '@/lib/teams';
 import { useSettings } from '@/lib/use-settings';
 import { useNotificationPermission } from '@/lib/use-permission';
 import { AppText } from '@/ui/app-text';
-import { IconButton, PrimaryButton, SecondaryButton } from '@/ui/buttons';
+import { IconButton, PrimaryButton, SecondaryButton, TextButton } from '@/ui/buttons';
 import { Pill } from '@/ui/deck-card';
 import { Screen } from '@/ui/screen';
 import { SectionTitle, StepperRow, SwitchRow } from '@/ui/rows';
+import { OfflineBanner } from '@/ui/states';
 import { OptionRow, Sheet } from '@/ui/sheet';
 
 const TIME_STEP = 15; // minutes per tap on a time of day
@@ -75,11 +76,17 @@ export default function Settings() {
         <View style={styles.spacer} />
       </View>
 
+      <OfflineBanner />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {!ready ? <AppText variant="bodySm" color={t.textSecondary}>Showing saved settings; changes sync when you’re online.</AppText> : null}
 
         <SectionTitle>Teams</SectionTitle>
-        {!subs.data ? <AppText variant="body" color={t.warning}>Can’t load your teams right now. Check your connection.</AppText> : null}
+        {!subs.data ? (
+          <View style={styles.teamHead}>
+            <AppText variant="body" color={t.warning} style={styles.flex}>Can’t load your teams right now. Check your connection.</AppText>
+            <TextButton label="Try again" onPress={() => void subs.refetch()} />
+          </View>
+        ) : null}
         {subs.data?.map((team) => (
           <View key={team.id} style={styles.team}>
             <View style={styles.teamHead}>
@@ -182,5 +189,5 @@ const useStyles = makeStyles((t) => ({
   team: { gap: space.sm, padding: space.md, borderRadius: radius.lg, backgroundColor: t.surfaceRaised, borderWidth: 1, borderColor: t.border },
   teamHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   teamDot: { width: 12, height: 12, borderRadius: 6 },
-  input: { height: 56, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.inset, color: t.textPrimary, fontFamily: 'Manrope_700Bold', fontSize: 18, letterSpacing: 4, textAlign: 'center' },
+  input: { minHeight: 56, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.inset, color: t.textPrimary, fontFamily: 'Manrope_700Bold', fontSize: 18, letterSpacing: 4, textAlign: 'center' },
 }));

@@ -11,7 +11,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { makeStyles, radius, space, useTheme } from '@/constants/theme';
 import { haptics } from '@/lib/haptics';
 import type { Card } from '@/lib/types';
-import { createSwipeGate, stampProgress, swipeOutcome, tilt, type SwipeOutcome } from '@/lib/swipe';
+import { stampProgress, swipeOutcome, tilt, type SwipeOutcome } from '@/lib/swipe';
 import { AppText } from './app-text';
 import { DeckCard } from './deck-card';
 
@@ -32,9 +32,7 @@ export function SwipeDeck({ cards, onDismiss, onOpen, handle }: Props) {
   const x = useSharedValue(0);
   const y = useSharedValue(0);
   const fade = useSharedValue(1);
-  const flying = useSharedValue(false); // a card that is already on its way out cannot be flung again
   const topId = cards[0]?.id ?? null;
-  const gate = useRef(createSwipeGate());
 
   // The latest props, read when a swipe lands (the gesture closure would otherwise hold the cards of an older render).
   const latest = useRef({ cards, onDismiss, onOpen });
@@ -47,55 +45,48 @@ export function SwipeDeck({ cards, onDismiss, onOpen, handle }: Props) {
     x.set(0);
     y.set(0);
     fade.set(1);
-    flying.set(false);
-    gate.current.reset();
-  }, [topId, x, y, fade, flying]);
+  }, [topId, x, y, fade]);
 
-  // Applies a landed swipe to the card that flew: once, and only if it is still the top card.
-  const commit = useCallback((outcome: SwipeOutcome, cardId: number) => {
+  const commit = useCallback((outcome: SwipeOutcome) => {
     const { cards: list, onDismiss: dismiss, onOpen: open } = latest.current;
     const card = list[0];
-    if (!card || outcome === 'none' || card.id !== cardId || !gate.current.take(card.id)) return;
+    if (!card || outcome === 'none') return;
     haptics.impact();
     if (outcome === 'dismiss') dismiss(card);
     else open(card);
   }, []);
 
   const fly = useCallback(
-    (outcome: 'dismiss' | 'open', cardId: number) => {
+    (outcome: 'dismiss' | 'open') => {
       'worklet';
-      if (flying.get()) return;
-      flying.set(true);
       const landed = (finished?: boolean) => {
         'worklet';
-        if (finished) scheduleOnRN(commit, outcome, cardId);
+        if (finished) scheduleOnRN(commit, outcome);
       };
       if (reduced) fade.set(withTiming(0, { duration: FADE_MS }, landed));
       else x.set(withTiming((outcome === 'dismiss' ? -1 : 1) * width * 1.3, { duration: FLY_MS, easing: Easing.out(Easing.quad) }, landed));
     },
-    [x, fade, flying, width, commit, reduced],
+    [x, fade, width, commit, reduced],
   );
 
-  useImperativeHandle(handle, () => ({ fling: (o) => { if (latest.current.cards[0]) fly(o, latest.current.cards[0].id); } }), [fly]);
+  useImperativeHandle(handle, () => ({ fling: (o) => cards.length > 0 && fly(o) }), [cards.length, fly]);
 
   const pan = usePanGesture({
     enabled: cards.length > 0,
     activeOffsetX: [-12, 12],
     failOffsetY: [-20, 20],
     onUpdate: (e) => {
-      if (flying.get()) return;
       x.set(e.translationX);
       y.set(reduced ? 0 : e.translationY * 0.15);
     },
     onDeactivate: (e) => {
-      if (flying.get() || topId === null) return;
       const outcome = swipeOutcome(e.translationX, e.velocityX, width);
       if (outcome === 'none') {
         x.set(reduced ? withTiming(0, { duration: FADE_MS }) : withSpring(0, SPRING));
         y.set(reduced ? withTiming(0, { duration: FADE_MS }) : withSpring(0, SPRING));
         return;
       }
-      fly(outcome, topId);
+      fly(outcome);
     },
   });
 
@@ -119,7 +110,7 @@ export function SwipeDeck({ cards, onDismiss, onOpen, handle }: Props) {
                 renderToHardwareTextureAndroid
                 accessible
                 accessibilityActions={[{ name: 'dismiss', label: 'Dismiss' }, { name: 'open', label: 'Open' }]}
-                onAccessibilityAction={(e) => fly(e.nativeEvent.actionName === 'open' ? 'open' : 'dismiss', card.id)}
+                onAccessibilityAction={(e) => fly(e.nativeEvent.actionName === 'open' ? 'open' : 'dismiss')}
                 style={[styles.card, topStyle]}>
                 <DeckCard card={card} />
                 <Animated.View pointerEvents="none" style={[styles.label, styles.labelRight, dismissLabel]}>

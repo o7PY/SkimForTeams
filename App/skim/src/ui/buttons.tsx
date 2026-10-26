@@ -6,6 +6,9 @@ import { makeStyles, radius, space, useTheme } from '@/constants/theme';
 import { AppText } from './app-text';
 import { Icon, type IconName } from './icon';
 
+/** The smallest touch target, in dp: smaller-looking controls get an invisible margin up to this size. */
+export const MIN_TARGET = 48;
+
 type Common = { onPress?: () => void; disabled?: boolean; label: string; style?: StyleProp<ViewStyle> };
 
 export function PrimaryButton({ onPress, disabled, busy, label, icon, style }: Common & { busy?: boolean; icon?: IconName }) {
@@ -46,7 +49,7 @@ export function IconButton({ onPress, disabled, label, icon, size = 48, tone = '
   const t = useTheme();
   const styles = useStyles();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }} disabled={disabled} onPress={onPress} hitSlop={6}
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }} disabled={disabled} onPress={onPress} hitSlop={Math.max(6, Math.ceil((MIN_TARGET - size) / 2))}
       style={({ pressed }) => [styles.icon, { width: size, height: size }, tone === 'accent' && styles.iconAccent, (pressed || disabled) && styles.dim, pressed && styles.press, style]}>
       <Icon name={icon} size={Math.round(size * 0.5)} color={tone === 'accent' ? t.primary : t.textPrimary} />
     </Pressable>
@@ -57,7 +60,7 @@ export function TextButton({ onPress, label, disabled }: Common) {
   const t = useTheme();
   const styles = useStyles();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={8} style={({ pressed }) => [styles.text, (pressed || disabled) && styles.dim]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }} style={({ pressed }) => [styles.text, (pressed || disabled) && styles.dim]}>
       <AppText variant="labelSm" color={t.primary}>{label}</AppText>
     </Pressable>
   );
@@ -67,9 +70,9 @@ const useStyles = makeStyles((t) => ({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   dim: { opacity: 0.55 },
   press: { transform: [{ scale: 0.96 }] },
-  primaryWrap: { height: 56, borderRadius: radius.full, overflow: 'hidden', boxShadow: `0 4px 15px ${t.shadow}` },
+  primaryWrap: { minHeight: 56, borderRadius: radius.full, overflow: 'hidden', boxShadow: `0 4px 15px ${t.shadow}` },
   primary: { flex: 1, paddingHorizontal: space.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: t.primary },
-  secondary: { height: 56, paddingHorizontal: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
+  secondary: { minHeight: 56, paddingHorizontal: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
   icon: { borderRadius: radius.full, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
   iconAccent: { borderColor: t.primaryBorder, backgroundColor: t.primarySoft },
   text: { paddingHorizontal: 4, paddingVertical: 4, borderRadius: radius.sm },
