@@ -38,7 +38,7 @@ async def body(request: web.Request) -> dict | None:
 
 
 def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey, now: Callable[[], datetime],
-               staff_ids: frozenset[str]) -> None:
+               staff_ids: frozenset[str], id_secret: str) -> None:
     async def settings_of(uid: str) -> dict:
         u = await storage.get_app_user(uid)
         return user_settings.effective(u["settings"] if u else None)
@@ -60,7 +60,7 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
         """Cards for ids (in that order); folded originals are loaded too and nested under their card."""
         s = await settings_of(uid)
         every = list(dict.fromkeys([*ids, *[f for fs in folded.values() for f in fs]]))
-        ld = await cards.load(storage, uid, every, detail, s, now())
+        ld = await cards.load(storage, uid, every, detail, s, now(), id_secret)
         important = set(s["important_types"])
         out = [cards.build_card(ld, i, now=now(), staff_ids=staff_ids, important=important, folded_ids=folded.get(i), detail=detail)
                for i in ids]

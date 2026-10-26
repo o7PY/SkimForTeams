@@ -201,16 +201,18 @@ class PostgresAppMixin:
             r["id"], r["user_id"], r.get("item_id"), r.get("event_id"), r["kind"], r.get("offset_minutes"), r.get("fire_at"), at)
         return _d(row)
 
-    async def tombstone_reminder(self, user_id: str, reminder: dict, at: datetime) -> None:
-        """Mark deleted (inserting a tombstone row first if it never existed, e.g. a virtual auto reminder)."""
+    async def tombstone_reminder(self, user_id: str, reminder: dict, at: datetime) -> bool:
+        """Mark deleted (inserting a tombstone row first if it never existed, e.g. a virtual auto reminder). False when it did
+        nothing because the id belongs to another user."""
         assert self.pool
-        await self.pool.execute(
+        tag = await self.pool.execute(
             """insert into reminders (id, user_id, item_id, event_id, kind, offset_minutes, fire_at, deleted_at, created_at, updated_at)
                values ($1,$2,$3,$4,$5,$6,$7,$8,$8,$8)
                on conflict (id) do update set deleted_at=excluded.deleted_at, updated_at=excluded.updated_at
                  where reminders.user_id = excluded.user_id""",
             reminder["id"], user_id, reminder.get("item_id"), reminder.get("event_id"), reminder["kind"],
             reminder.get("offset_minutes"), reminder.get("fire_at"), at)
+        return tag.endswith(" 1")
 
     async def get_reminder(self, user_id: str, reminder_id: str) -> dict | None:
         assert self.pool

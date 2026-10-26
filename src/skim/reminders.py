@@ -5,6 +5,8 @@ the event's CURRENT start, the user's settings and `now`. So a reschedule moves 
 uncancelled one brings them back, and a reminder in the past is simply not returned. Everything is in Asia/Kolkata."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -12,7 +14,6 @@ from typing import Callable
 
 from .eventtime import DEAD_STATUSES, IST, is_upcoming
 
-NAMESPACE = uuid.UUID("5b1c1c6e-3a6e-4d0b-9f6f-2b7a1d4c8e10")  # fixed, so virtual reminder ids are stable across servers
 DAY_BEFORE, SAME_DAY = "day_before", "same_day"
 KIND_RULE = {"recommended_day_before": DAY_BEFORE, "auto_day_before": DAY_BEFORE,
              "recommended_same_day": SAME_DAY, "auto_same_day": SAME_DAY}
@@ -32,14 +33,21 @@ class Scheduled:
     offset_minutes: int | None = None
 
 
-def virtual_id(user_id: str, event_id: int, kind: str) -> str:
+def _derive(secret: str, label: str) -> str:
+    """A stable uuid that cannot be computed without the server secret (so nobody can squat another user's reminder ids)."""
+    if not secret:
+        raise ValueError("a reminder id secret is required")
+    return str(uuid.UUID(bytes=hmac.new(secret.encode(), label.encode(), hashlib.sha256).digest()[:16], version=5))
+
+
+def virtual_id(user_id: str, event_id: int, kind: str, secret: str) -> str:
     """The id an automatic reminder has before it is stored; the app can PUT/DELETE it like any other."""
-    return str(uuid.uuid5(NAMESPACE, f"{user_id}:{event_id}:{kind}"))
+    return _derive(secret, f"v:{user_id}:{event_id}:{kind}")
 
 
-def sibling_id(reminder_id: str) -> str:
+def sibling_id(reminder_id: str, secret: str) -> str:
     """The id of the second row created by 'recommended reminders' from the one uuid the client generated."""
-    return str(uuid.uuid5(NAMESPACE, f"{reminder_id}:same_day"))
+    return _derive(secret, f"s:{reminder_id}:same_day")
 
 
 def _hhmm(s: str) -> time:
@@ -97,7 +105,7 @@ def unconfirmed(e: dict) -> bool:
     return bool(e.get("needs_review")) or e.get("confidence") == "low"
 
 
-def compute(user_id: str, rows: list[dict], events: dict[int, dict], settings: dict, now: datetime, *,
+def compute(user_id: str, rows: list[dict], events: dict[int, dict], settings: dict, now: datetime, *, secret: str,
             item_for_event: Callable[[int], int | None] = lambda _e: None, days: int = DEFAULT_DAYS,
             cap: int = MAX_SCHEDULED) -> list[Scheduled]:
     """Every reminder the user should have scheduled in the next `days`, soonest first, at most `cap`.
@@ -128,7 +136,7 @@ def compute(user_id: str, rows: list[dict], events: dict[int, dict], settings: d
                 continue
             times = recommended_times(e, rem)
             for kind in AUTO_KINDS:
-                vid = virtual_id(user_id, e["id"], kind)
+                vid = virtual_id(user_id, e["id"], kind, secret)
                 t = times[KIND_RULE[kind]]
                 if vid in stored_ids or not live(t):
                     continue
@@ -139,9 +147,9 @@ def compute(user_id: str, rows: list[dict], events: dict[int, dict], settings: d
     return out[:cap]
 
 
-def virtual_catalog(user_id: str, events: dict[int, dict]) -> dict[str, tuple[int, str]]:
+def virtual_catalog(user_id: str, events: dict[int, dict], secret: str) -> dict[str, tuple[int, str]]:
     """{virtual id: (event id, kind)} for every event: lets DELETE/PUT of a not-yet-stored automatic reminder find its event."""
-    return {virtual_id(user_id, e["id"], k): (e["id"], k) for e in events.values() for k in AUTO_KINDS}
+    return {virtual_id(user_id, e["id"], k, secret): (e["id"], k) for e in events.values() for k in AUTO_KINDS}
 
 
 def describe(e: dict | None, fire_at: datetime, fallback_title: str) -> tuple[str, str]:

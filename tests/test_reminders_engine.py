@@ -10,6 +10,7 @@ from skim.api import user_settings
 IST = ZoneInfo("Asia/Kolkata")
 U = "11111111-1111-1111-1111-111111111111"
 SET = user_settings.effective({})
+SECRET = "test-reminder-id-secret"
 
 
 def at(y, mo, d, h=0, mi=0):
@@ -34,7 +35,7 @@ def row(kind="manual", rid="r1", event_id=1, item_id=10, offset=None, fire=None,
 
 
 def run(rows=(), events=(), settings=SET, now=NOW, **kw):  # (settings default: automatic reminders ON, like a new user)
-    return R.compute(U, list(rows), {e["id"]: e for e in events}, settings, now, **kw)
+    return R.compute(U, list(rows), {e["id"]: e for e in events}, settings, now, secret=SECRET, **kw)
 
 
 def run_noauto(rows=(), events=(), **kw):
@@ -144,7 +145,7 @@ def test_important_types_get_the_pair_automatically_as_virtual_reminders():
     out = run([], [e], item_for_event=lambda _e: 5)
     assert [(s.kind, s.fire_at, s.virtual, s.item_id) for s in out] == [
         ("auto_day_before", at(2026, 11, 1, 20), True, 5), ("auto_same_day", at(2026, 11, 2, 7), True, 5)]
-    assert out[0].id == R.virtual_id(U, 1, "auto_day_before") != R.virtual_id(U, 1, "auto_same_day")
+    assert out[0].id == R.virtual_id(U, 1, "auto_day_before", SECRET) != R.virtual_id(U, 1, "auto_same_day", SECRET)
 
 
 @pytest.mark.parametrize("why,ev,sets", [
@@ -168,7 +169,7 @@ def test_ticking_another_type_turns_automatic_reminders_on_for_it():
 
 def test_a_tombstone_keeps_an_automatic_reminder_from_coming_back_and_an_edit_replaces_it():
     e = event(start=at(2026, 11, 2, 10))
-    vid_day, vid_same = R.virtual_id(U, 1, "auto_day_before"), R.virtual_id(U, 1, "auto_same_day")
+    vid_day, vid_same = R.virtual_id(U, 1, "auto_day_before", SECRET), R.virtual_id(U, 1, "auto_same_day", SECRET)
     out = run([row("auto_day_before", vid_day, deleted=NOW)], [e])
     assert [s.kind for s in out] == ["auto_same_day"]                                  # the deleted one stays gone
     edited = run([row("auto_same_day", vid_same, offset=-30)], [e])
@@ -198,11 +199,16 @@ def test_sixty_item_cap_soonest_first():
 
 
 def test_virtual_ids_are_stable_per_user_event_and_kind():
-    assert R.virtual_id(U, 1, "auto_day_before") == R.virtual_id(U, 1, "auto_day_before")
-    assert len({R.virtual_id(u, e, k) for u in (U, "22222222-2222-2222-2222-222222222222") for e in (1, 2) for k in R.AUTO_KINDS}) == 8
-    assert R.sibling_id("abc") == R.sibling_id("abc") != "abc"
-    cat = R.virtual_catalog(U, {1: event(), 2: event(eid=2)})
-    assert cat[R.virtual_id(U, 2, "auto_same_day")] == (2, "auto_same_day") and len(cat) == 4
+    assert R.virtual_id(U, 1, "auto_day_before", SECRET) == R.virtual_id(U, 1, "auto_day_before", SECRET)
+    assert len({R.virtual_id(u, e, k, SECRET) for u in (U, "22222222-2222-2222-2222-222222222222") for e in (1, 2) for k in R.AUTO_KINDS}) == 8
+    # nobody without the server secret can compute them (so nobody can squat another user's reminder ids)
+    assert R.virtual_id(U, 1, "auto_day_before", "another-secret") != R.virtual_id(U, 1, "auto_day_before", SECRET)
+    assert R.sibling_id("abc", "another-secret") != R.sibling_id("abc", SECRET)
+    with pytest.raises(ValueError):
+        R.virtual_id(U, 1, "auto_day_before", "")
+    assert R.sibling_id("abc", SECRET) == R.sibling_id("abc", SECRET) != "abc"
+    cat = R.virtual_catalog(U, {1: event(), 2: event(eid=2)}, SECRET)
+    assert cat[R.virtual_id(U, 2, "auto_same_day", SECRET)] == (2, "auto_same_day") and len(cat) == 4
 
 
 def test_notification_text_is_course_and_event_info_only():

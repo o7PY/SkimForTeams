@@ -193,16 +193,16 @@ async def test_reminders_upsert_tombstone_and_ownership(store):
     assert other is None                                                                     # U2 cannot take U1's row
     assert (await store.get_reminder(U1, R1))["offset_minutes"] == -120
     assert await store.get_reminder(U2, R1) is None
-    await store.tombstone_reminder(U2, {"id": R1, "kind": "manual"}, NOW)                    # not the owner: ignored
+    assert await store.tombstone_reminder(U2, {"id": R1, "kind": "manual"}, NOW) is False   # not the owner: ignored, and it says so
     assert [x["id"] for x in await store.list_reminders(U1)] == [R1]
-    await store.tombstone_reminder(U1, {"id": R1, "kind": "manual"}, NOW + timedelta(minutes=2))
+    assert await store.tombstone_reminder(U1, {"id": R1, "kind": "manual"}, NOW + timedelta(minutes=2)) is True
     assert await store.list_reminders(U1) == []
     [t] = await store.list_reminders(U1, include_deleted=True)
     assert t["deleted_at"] == NOW + timedelta(minutes=2)
     r = await store.upsert_reminder({"id": R1, "user_id": U1, "item_id": a, "kind": "manual", "fire_at": NOW}, NOW)
     assert r["deleted_at"] is None                                                           # re-creating clears the tombstone
     # a tombstone for a reminder that never existed (a virtual auto reminder the user deleted)
-    await store.tombstone_reminder(U1, {"id": R2, "item_id": a, "event_id": eid, "kind": "auto_same_day"}, NOW)
+    assert await store.tombstone_reminder(U1, {"id": R2, "item_id": a, "event_id": eid, "kind": "auto_same_day"}, NOW) is True
     assert [x["id"] for x in await store.list_reminders(U1)] == [R1]
     assert {x["id"] for x in await store.list_reminders(U1, include_deleted=True)} == {R1, R2}
 

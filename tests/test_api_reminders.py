@@ -7,7 +7,7 @@ import pytest
 from skim import reminders as R
 from test_api_deck import A, B, api, card_for, make_event, reschedule  # noqa: F401  (api is a fixture)
 from test_feed_build import CONV, NOW, msg
-from test_reminders_engine import at
+from test_reminders_engine import SECRET, at
 
 NEW = lambda: str(uuid.uuid4())  # noqa: E731
 
@@ -51,7 +51,7 @@ async def test_recommended_reminders_for_the_quiz_card_are_20_00_the_day_before_
     st, b = await api.call("PUT", f"/reminders/{rid}", json={"recommended": True, "item_id": item})
     assert st == 200
     assert [(r["id"], r["kind"], r["fire_at"]) for r in b["reminders"]] == [
-        (rid, "recommended_day_before", "2026-11-01T20:00:00+05:30"), (R.sibling_id(rid), "recommended_same_day", "2026-11-02T07:00:00+05:30")]
+        (rid, "recommended_day_before", "2026-11-01T20:00:00+05:30"), (R.sibling_id(rid, SECRET), "recommended_same_day", "2026-11-02T07:00:00+05:30")]
     got = await reminders(api)
     assert [(r["kind"], r["fire_at"], r["virtual"]) for r in got] == [          # the automatic pair is not doubled
         ("recommended_day_before", "2026-11-01T20:00:00+05:30", False), ("recommended_same_day", "2026-11-02T07:00:00+05:30", False)]
@@ -70,7 +70,7 @@ async def test_a_new_member_has_automatic_reminders_for_important_events_and_can
         ("auto_day_before", True, "2026-11-01T20:00:00+05:30"), ("auto_same_day", True, "2026-11-02T07:00:00+05:30")]
     assert {r["item_id"] for r in got} == {item} and {r["event_id"] for r in got} == {eid}
     day_id, same_id = by_kind(got)["auto_day_before"]["id"], by_kind(got)["auto_same_day"]["id"]
-    assert day_id == R.virtual_id(A, eid, "auto_day_before")
+    assert day_id == R.virtual_id(A, eid, "auto_day_before", SECRET)
     assert (await api.call("DELETE", f"/reminders/{day_id}"))[0] == 204                        # deleting a virtual stores a tombstone
     assert [r["kind"] for r in await reminders(api)] == ["auto_same_day"]
     assert (await api.call("DELETE", f"/reminders/{day_id}"))[0] == 204                        # idempotent
@@ -231,7 +231,7 @@ async def test_a_card_with_two_events_needs_the_event_id(api):
 async def test_leaving_the_team_removes_its_reminders_and_hides_other_users_events(api):
     item, eid = await quiz_card(api)
     await api.call("PUT", f"/reminders/{NEW()}", json={"kind": "manual", "item_id": item, "offset_minutes": -30})
-    day_id = R.virtual_id(A, eid, "auto_day_before")
+    day_id = R.virtual_id(A, eid, "auto_day_before", SECRET)
     await api.call("PUT", f"/reminders/{day_id}", json={"kind": "auto_day_before", "event_id": eid, "offset_minutes": -600})   # event-only row
     assert len(await reminders(api)) == 3
     await api.call("DELETE", "/subscriptions/T1")
@@ -253,3 +253,26 @@ async def test_requires_a_token(api):
     for method, path in (("GET", "/reminders"), ("PUT", f"/reminders/{NEW()}"), ("DELETE", f"/reminders/{NEW()}")):
         r = await api.client.request(method, "/api/v1" + path)
         assert r.status == 401
+
+
+async def test_nobody_can_squat_an_id_so_that_a_victims_delete_silently_does_nothing(api):
+    item, eid = await quiz_card(api)
+    victim_id = R.virtual_id(A, eid, "auto_day_before", SECRET)
+    await api.call("GET", "/me", "b")                                                         # B exists (a request creates the user)
+    # an attacker who somehow got a row onto the victim's reminder id (here: written straight to storage)
+    await api.store.upsert_reminder({"id": victim_id, "user_id": B, "kind": "manual", "fire_at": NOW + timedelta(days=1)}, NOW)
+    st, _ = await api.call("DELETE", f"/reminders/{victim_id}")
+    assert st == 404                                                                          # never "204 deleted" when nothing was
+    st, _ = await api.call("PUT", f"/reminders/{victim_id}", json={"kind": "auto_day_before", "event_id": eid, "offset_minutes": -5})
+    assert st == 404
+    assert (await api.store.get_reminder(B, victim_id))["deleted_at"] is None                 # the attacker's row is untouched too
+
+
+async def test_a_users_put_cannot_overwrite_another_users_row_by_reusing_its_id(api):
+    item, eid = await quiz_card(api)
+    rid = NEW()
+    await api.call("PUT", f"/reminders/{rid}", json={"kind": "manual", "item_id": item, "offset_minutes": -30})
+    await api.join("b")
+    assert (await api.call("PUT", f"/reminders/{rid}", "b", json={"recommended": True, "item_id": item}))[0] == 404
+    assert (await api.store.get_reminder(A, rid))["offset_minutes"] == -30
+    assert await api.store.get_reminder(B, rid) is None

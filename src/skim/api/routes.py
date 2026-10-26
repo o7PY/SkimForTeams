@@ -70,7 +70,10 @@ async def _json(request: web.Request):
 
 
 def register(app: web.Application, storage: Storage, verifier: TokenVerifier, clock: Callable[[], float] = time.monotonic,
-             now: Callable[[], datetime] = _now, staff_aad_ids: frozenset[str] = frozenset()) -> web.Application:
+             now: Callable[[], datetime] = _now, staff_aad_ids: frozenset[str] = frozenset(),
+             id_secret: str = "") -> web.Application:
+    if not id_secret:
+        raise ValueError("id_secret is required (reminder ids are derived from it)")
     seen: dict[str, float] = {}
     sub = web.Application(middlewares=[make_auth_middleware(storage, verifier, seen, clock)])
 
@@ -107,7 +110,7 @@ def register(app: web.Application, storage: Storage, verifier: TokenVerifier, cl
     sub.router.add_get("/me", me)
     sub.router.add_patch("/me/settings", patch_settings)
     sub.router.add_delete("/me", delete_me)
-    routes_items.add_routes(sub, storage, USER, now, frozenset(staff_aad_ids))
-    routes_reminders.add_routes(sub, storage, USER, now)
+    routes_items.add_routes(sub, storage, USER, now, frozenset(staff_aad_ids), id_secret)
+    routes_reminders.add_routes(sub, storage, USER, now, id_secret)
     app.add_subapp("/api/v1", sub)
     return sub

@@ -30,7 +30,8 @@ def etag(items: list[dict]) -> str:
     return hashlib.sha1("|".join(f"{i['id']}@{i['fire_at']}" for i in items).encode()).hexdigest()[:16]
 
 
-def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey, now: Callable[[], datetime]) -> None:
+def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey, now: Callable[[], datetime],
+               id_secret: str) -> None:
     async def settings_of(uid: str) -> dict:
         u = await storage.get_app_user(uid)
         return user_settings.effective(u["settings"] if u else None)
@@ -43,7 +44,7 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
         bare = sorted({s.item_id for s in sched if s.event_id is None and s.item_id})
         names: dict[int, str] = {}
         if bare:  # a reminder on a card with no event is titled with the card's own subject or first words
-            ld = await cards.load(storage, uid, bare, False, settings, now())
+            ld = await cards.load(storage, uid, bare, False, settings, now(), id_secret)
             for i in bare:
                 c = cards.build_card(ld, i, now=now(), staff_ids=frozenset(), important=set())
                 m = (c or {}).get("message") or {}
@@ -61,7 +62,7 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
         settings, events, rows = await settings_of(uid), await user_events(uid), None
         rows = await storage.list_reminders(uid, include_deleted=True)
         newest = await storage.latest_items_for_events(uid, list(events)) if events else {}
-        return engine.compute(uid, rows, events, settings, now(), item_for_event=newest.get, days=days, cap=cap), events, settings, rows
+        return engine.compute(uid, rows, events, settings, now(), item_for_event=newest.get, days=days, cap=cap, secret=id_secret), events, settings, rows
 
     async def get_reminders(request: web.Request) -> web.Response:
         uid = request[user_key]["id"]
@@ -115,7 +116,7 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
             times = engine.recommended_times(e, settings["reminders"])
             if not any(x and x > t for x in times.values()):
                 return err(400, "no reminder time is left before this event")
-            pair = [(rid, "recommended_day_before"), (engine.sibling_id(rid), "recommended_same_day")]
+            pair = [(rid, "recommended_day_before"), (engine.sibling_id(rid, id_secret), "recommended_same_day")]
             for i, kind in pair:
                 if await storage.upsert_reminder({"id": i, "user_id": uid, "item_id": item_id, "event_id": e["id"], "kind": kind}, t) is None:
                     return err(404, "not found")
@@ -138,14 +139,14 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
                 if offset is not None and (e is None or engine.anchor(e) is None):
                     return err(400, "an offset needs a card with a dated event")
             else:  # an automatic reminder the user edits: its id is fixed by (user, event, kind)
-                if e is None or rid != engine.virtual_id(uid, e["id"], kind):
+                if e is None or rid != engine.virtual_id(uid, e["id"], kind, id_secret):
                     return err(400, "automatic reminders are identified by user, event and kind")
             row = {"id": rid, "user_id": uid, "item_id": item_id, "event_id": e["id"] if e else None, "kind": kind,
                    "offset_minutes": offset, "fire_at": fire}
             if await storage.upsert_reminder(row, t) is None:
                 return err(404, "not found")
         sched, ev, settings, _ = await computed(uid, days=365, cap=10_000)
-        mine = {rid, engine.sibling_id(rid)}
+        mine = {rid, engine.sibling_id(rid, id_secret)}
         items = await titled(uid, [s for s in sched if s.id in mine], ev, settings)
         shown = {i["id"]: i for i in items}
         if b.get("recommended") is True:  # a dropped / already-past time still gets its row, shown with no time
@@ -163,16 +164,17 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
         t = now()
         row = await storage.get_reminder(uid, rid)
         if row is not None:
-            if row["deleted_at"] is None:
-                await storage.tombstone_reminder(uid, row, t)
+            if row["deleted_at"] is None and not await storage.tombstone_reminder(uid, row, t):
+                return err(404, "not found")
             return web.Response(status=204)
         events = await user_events(uid)
-        hit = engine.virtual_catalog(uid, events).get(rid)
+        hit = engine.virtual_catalog(uid, events, id_secret).get(rid)
         if hit is None:
             return err(404, "not found")
         eid, kind = hit  # an automatic reminder that was never stored: a tombstone keeps it from coming back
         newest = await storage.latest_items_for_events(uid, [eid])
-        await storage.tombstone_reminder(uid, {"id": rid, "item_id": newest.get(eid), "event_id": eid, "kind": kind}, t)
+        if not await storage.tombstone_reminder(uid, {"id": rid, "item_id": newest.get(eid), "event_id": eid, "kind": kind}, t):
+            return err(404, "not found")  # the id is taken by someone else's row: never answer "deleted" when nothing was
         return web.Response(status=204)
 
     sub.router.add_get("/reminders", get_reminders)

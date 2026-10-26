@@ -138,7 +138,7 @@ class MemoryAppMixin:
             iid = self._feed_seq
             row = {c: item.get(c) for c in FEED_COLS}
             row["hidden"] = bool(item.get("hidden", False))
-            self.feed_items[iid] = {"id": iid, **row}
+            self.feed_items[iid] = {"id": iid, "created_at": datetime.now().astimezone(), **row}
         for eid in event_ids:
             self.feed_item_events.add((iid, eid))
         return iid, created
@@ -194,16 +194,18 @@ class MemoryAppMixin:
         self.reminders[r["id"]] = row
         return dict(row)
 
-    async def tombstone_reminder(self, user_id: str, reminder: dict, at: datetime) -> None:
+    async def tombstone_reminder(self, user_id: str, reminder: dict, at: datetime) -> bool:
         cur = self.reminders.get(reminder["id"])
         if cur is not None:
-            if cur["user_id"] == user_id:
-                cur["deleted_at"], cur["updated_at"] = at, at
-            return
+            if cur["user_id"] != user_id:
+                return False
+            cur["deleted_at"], cur["updated_at"] = at, at
+            return True
         self.reminders[reminder["id"]] = {
             "id": reminder["id"], "user_id": user_id, "item_id": reminder.get("item_id"), "event_id": reminder.get("event_id"),
             "kind": reminder["kind"], "offset_minutes": reminder.get("offset_minutes"), "fire_at": reminder.get("fire_at"),
             "deleted_at": at, "created_at": at, "updated_at": at}
+        return True
 
     async def get_reminder(self, user_id: str, reminder_id: str) -> dict | None:
         r = self.reminders.get(reminder_id)

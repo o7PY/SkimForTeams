@@ -13,6 +13,7 @@ from skim.jobs.feed_build import build_feed
 from collections import Counter
 
 from test_feed_build import CONV, NOW, PROF, STAFF, STUDENT, T0, analyse, msg, quiz_op, team
+from test_reminders_engine import SECRET
 
 A, B = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001", "bbbbbbbb-bbbb-bbbb-bbbb-000000000002"
 USERS = {"a": (A, "Asha"), "b": (B, "Bo")}
@@ -65,7 +66,7 @@ class Api:
 async def api(store):
     clock = Clock()
     app = web.Application()
-    api_routes.register(app, store, FakeVerifier(), now=clock, staff_aad_ids=STAFF)
+    api_routes.register(app, store, FakeVerifier(), now=clock, staff_aad_ids=STAFF, id_secret=SECRET)
     client = TestClient(TestServer(app))
     await client.start_server()
     await team(store)

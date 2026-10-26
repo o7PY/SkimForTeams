@@ -90,7 +90,8 @@ class Loaded:
     history: dict[int, list[dict]] = field(default_factory=dict)
 
 
-async def load(storage: Storage, user_id: str, item_ids: list[int], detail: bool, settings: dict, now: datetime) -> Loaded:
+async def load(storage: Storage, user_id: str, item_ids: list[int], detail: bool, settings: dict, now: datetime,
+               id_secret: str) -> Loaded:
     items = await storage.get_feed_items(item_ids)
     event_ids = sorted({e for it in items.values() for e in it["event_ids"]})
     change_ids = [it["event_change_id"] for it in items.values() if it["kind"] == "change"]
@@ -116,7 +117,7 @@ async def load(storage: Storage, user_id: str, item_ids: list[int], detail: bool
     user_events = await storage.list_events_for_user(user_id, (now - timedelta(days=2)).astimezone(IST).date())
     rows = await storage.list_reminders(user_id, include_deleted=True)
     newest = await storage.latest_items_for_events(user_id, list(user_events)) if user_events else {}
-    scheduled = rem_engine.compute(user_id, rows, user_events, settings, now, item_for_event=newest.get, days=365, cap=10_000)
+    scheduled = rem_engine.compute(user_id, rows, user_events, settings, now, item_for_event=newest.get, days=365, cap=10_000, secret=id_secret)
     return Loaded(
         items=items, events=events | {i: e for i, e in user_events.items() if i in event_ids}, messages=messages,
         files=await storage.get_message_files(sorted(pairs)) if pairs else {},
