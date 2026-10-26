@@ -212,7 +212,8 @@ class MemoryAppMixin:
             self.devices[token] = {"id": self._device_seq, "user_id": user_id, "expo_push_token": token,
                                    "platform": platform, "created_at": at, "last_seen_at": at, "disabled_at": None}
         else:
-            d.update(user_id=user_id, platform=platform, last_seen_at=at, disabled_at=None)
+            same = d["user_id"] == user_id
+            d.update(user_id=user_id, platform=platform, last_seen_at=at, disabled_at=None if same else d["disabled_at"])
 
     async def disable_device(self, token: str, at: datetime) -> None:
         d = self.devices.get(token)

@@ -208,12 +208,14 @@ class PostgresAppMixin:
 
     # --- devices ---
     async def upsert_device(self, user_id: str, token: str, platform: str, at: datetime) -> None:
-        """Register a token for this user; a token moves to the latest user and is re-enabled."""
+        """Register a token for this user. A token moves to the latest signed-in user (one phone, several accounts), but only
+        the same user re-enables a disabled token: an owner change never clears disabled_at."""
         assert self.pool
         await self.pool.execute(
             """insert into devices (user_id, expo_push_token, platform, created_at, last_seen_at) values ($1,$2,$3,$4,$4)
                on conflict (expo_push_token) do update set user_id=excluded.user_id, platform=excluded.platform,
-                 last_seen_at=excluded.last_seen_at, disabled_at=null""", user_id, token, platform, at)
+                 last_seen_at=excluded.last_seen_at,
+                 disabled_at = case when devices.user_id = excluded.user_id then null else devices.disabled_at end""", user_id, token, platform, at)
 
     async def disable_device(self, token: str, at: datetime) -> None:
         assert self.pool
