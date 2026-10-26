@@ -10,7 +10,7 @@ from typing import Callable
 from aiohttp import web
 
 from ..storage.base import Storage
-from . import routes_items, routes_reminders, user_settings
+from . import routes_devices, routes_items, routes_reminders, user_settings
 from .auth import AuthError, TokenVerifier
 
 log = logging.getLogger("skim.api")
@@ -111,6 +111,7 @@ def register(app: web.Application, storage: Storage, verifier: TokenVerifier, cl
     sub.router.add_patch("/me/settings", patch_settings)
     sub.router.add_delete("/me", delete_me)
     routes_items.add_routes(sub, storage, USER, now, frozenset(staff_aad_ids), id_secret)
-    routes_reminders.add_routes(sub, storage, USER, now, id_secret)
+    etag = routes_reminders.add_routes(sub, storage, USER, now, id_secret)
+    routes_devices.add_routes(sub, storage, USER, now, etag)
     app.add_subapp("/api/v1", sub)
     return sub

@@ -63,6 +63,9 @@ Extra environment (all optional; without Graph credentials or `JOBS_TOKEN` the `
 | `SUPABASE_URL` | unset | `https://<ref>.supabase.co`; access tokens are verified against its JWKS |
 | `SUPABASE_JWT_SECRET` | unset | Legacy HS256 secret, used only for tokens that say HS256 (use Secret Manager) |
 | `FEED_LOOKBACK_DAYS` | 30 | How far back the `feed-build` step (student-app cards, inside `run-all`) looks; `python scripts/feed_build.py --backfill` has no limit |
+| `PUSH_ENABLED` | false | Change alerts to students' phones through Expo (`push-alerts` / `push-receipts` steps inside `run-all`); the first run only records where it is, so history never alerts |
+| `EXPO_ACCESS_TOKEN` | unset | Expo "enhanced push security" bearer token (use Secret Manager) |
+| `EXPO_PUSH_URL` | Expo | Tests only |
 
 Graph needs the bot's app registration to have the application roles `Channel.ReadBasic.All`, `Files.Read.All`,
 `Group.Selected`, `Team.ReadBasic.All` (admin consent), and the team to be granted via RSC.

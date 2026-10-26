@@ -117,3 +117,38 @@ class MemoryDeckMixin:
                 if eid not in best or k > best[eid]:
                     best[eid] = k
         return {e: k[1] for e, k in best.items()}
+
+    # --- change alerts (push-alerts job) ---
+    async def max_event_change_id(self) -> int:
+        return max((c["id"] for c in self.event_changes), default=0)
+
+    async def list_changes_after(self, after_id: int, types: tuple[str, ...], limit: int) -> list[dict]:
+        out = []
+        for c in sorted(self.event_changes, key=lambda c: c["id"]):
+            e = self.events.get(c["event_id"])
+            team = self.teams.get(e["team_id"]) if e else None
+            if c["id"] > after_id and c["change_type"] in types and e and team and team.get("removed_at") is None:
+                out.append({**{k: c.get(k) for k in ("id", "event_id", "change_type", "old_values", "new_values", "confidence", "at")},
+                            "team_id": e["team_id"]})
+        return out[:limit]
+
+    async def alert_audience(self, team_id: str, event_id: int) -> list[dict]:
+        item_ids = {i for i, e in self.feed_item_events if e == event_id}
+        out = []
+        for (uid, tid), s in sorted(self.subscriptions.items()):
+            if tid != team_id or s["left_at"] is not None or s["muted"] or uid not in self.app_users:
+                continue
+            stars = [{"expires_at": st["expires_at"], "until_event_over": st["until_event_over"]}
+                     for (u, i), st in self.stars.items() if u == uid and i in item_ids]
+            reminded = any(r["user_id"] == uid and r["deleted_at"] is None and (r.get("event_id") == event_id or r.get("item_id") in item_ids)
+                           for r in self.reminders.values())
+            out.append({"user_id": uid, "settings": self.app_users[uid]["settings"] or {}, "stars": stars, "has_reminder": reminded})
+        return out
+
+    async def feed_item_for_change(self, change_id: int) -> int | None:
+        return next((i for i, f in self.feed_items.items() if f["kind"] == "change" and f["event_change_id"] == change_id), None)
+
+    async def deck_changed_since(self, user_id: str, since: datetime) -> bool:
+        subs = self._active_teams(user_id)
+        return any(f["team_id"] in subs and not f["hidden"] and f.get("created_at") is not None and f["created_at"] > since - timedelta(minutes=2)
+                   for f in self.feed_items.values())

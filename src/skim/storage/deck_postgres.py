@@ -138,3 +138,55 @@ class PostgresDeckMixin:
                join subscriptions s on s.team_id = f.team_id and s.user_id = $1 and s.left_at is null
                where fe.event_id = any($2::bigint[]) order by fe.event_id, f.occurred_at desc, f.id desc""", user_id, event_ids)
         return {r["event_id"]: r["id"] for r in rows}
+
+    # --- change alerts (push-alerts job) ---
+    async def max_event_change_id(self) -> int:
+        assert self.pool
+        return await self.pool.fetchval("select coalesce(max(id), 0) from event_changes")
+
+    async def list_changes_after(self, after_id: int, types: tuple[str, ...], limit: int) -> list[dict]:
+        """New event changes (oldest first) of live teams, with the event's team."""
+        assert self.pool
+        rows = await self.pool.fetch(
+            """select ec.id, ec.event_id, ec.change_type, ec.old_values, ec.new_values, ec.confidence, ec.at, e.team_id
+               from event_changes ec join events e on e.id = ec.event_id
+               join teams t on t.id = e.team_id and t.removed_at is null
+               where ec.id > $1 and ec.change_type = any($2::text[]) order by ec.id limit $3""", after_id, list(types), limit)
+        return [dict(r) for r in rows]
+
+    async def alert_audience(self, team_id: str, event_id: int) -> list[dict]:
+        """Subscribers of the team who have not muted it and have not left, each with their settings, their stars on cards
+        about the event, and whether they hold a reminder for it (P4-D-122)."""
+        assert self.pool
+        users = await self.pool.fetch(
+            """select u.id as user_id, u.settings from subscriptions s join app_users u on u.id = s.user_id
+               where s.team_id = $1 and s.left_at is null and not s.muted order by u.id""", team_id)
+        if not users:
+            return []
+        ids = [str(u["user_id"]) for u in users]
+        stars: dict[str, list[dict]] = {}
+        for r in await self.pool.fetch(
+                """select st.user_id, st.expires_at, st.until_event_over from stars st
+                   join feed_item_events fe on fe.item_id = st.item_id
+                   where fe.event_id = $1 and st.user_id = any($2::uuid[])""", event_id, ids):
+            stars.setdefault(str(r["user_id"]), []).append({"expires_at": r["expires_at"], "until_event_over": r["until_event_over"]})
+        reminded = {str(r["user_id"]) for r in await self.pool.fetch(
+            """select distinct r.user_id from reminders r
+               where r.deleted_at is null and r.user_id = any($2::uuid[])
+                 and (r.event_id = $1 or r.item_id in (select item_id from feed_item_events where event_id = $1))""", event_id, ids)}
+        return [{"user_id": str(u["user_id"]), "settings": u["settings"] or {}, "stars": stars.get(str(u["user_id"]), []),
+                 "has_reminder": str(u["user_id"]) in reminded} for u in users]
+
+    async def feed_item_for_change(self, change_id: int) -> int | None:
+        assert self.pool
+        return await self.pool.fetchval("select id from feed_items where kind = 'change' and event_change_id = $1", change_id)
+
+    async def deck_changed_since(self, user_id: str, since: datetime) -> bool:
+        """Has a card appeared in the user's teams since `since`? (the cheap background-sync check). `created_at` is the DATABASE
+        clock and `since` came from the app server's: a 2-minute margin means skew can only cause a harmless extra refetch,
+        never a missed card (the app moves `since` forward after every sync)."""
+        assert self.pool
+        return await self.pool.fetchval(
+            """select exists (select 1 from feed_items f join subscriptions s on s.team_id = f.team_id
+                              and s.user_id = $1 and s.left_at is null
+                              where f.created_at > $2::timestamptz - interval '2 minutes' and not f.hidden)""", user_id, since)

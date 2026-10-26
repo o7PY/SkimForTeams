@@ -19,7 +19,9 @@ from .schema import schema_status
 from .graph.auth import MsalTokenProvider
 from .graph.client import GraphClient
 from .ai.services import AIServices
+from .jobs.push_alerts import PushService
 from .jobs.runner import JobRunner
+from .push import ExpoClient
 from .normalize import is_non_standard_channel
 from .storage.base import Storage
 
@@ -98,15 +100,19 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
         log.info("Phase 4 API disabled: API_ENABLED is not set")
 
     own_graph = False
+    expo: ExpoClient | None = None
     if settings.jobs_token and graph is None and settings.graph_credentials:
         graph = GraphClient(MsalTokenProvider(*settings.graph_credentials), base_url=settings.graph_base_url,
                             max_concurrency=settings.graph_max_concurrency)
         own_graph = True
     if settings.jobs_token and graph is not None:
+        if settings.push_enabled:
+            expo = ExpoClient(settings.expo_access_token, settings.expo_push_url)
         jobs_api.register(app, JobRunner(storage, graph, settings.job_time_budget_seconds,
                                   backfill_since_days=settings.backfill_since_days,
                                   backfill_max_messages=settings.backfill_max_messages_per_channel, ai=ai,
-                                  staff_aad_ids=settings.staff_aad_ids, feed_lookback_days=settings.feed_lookback_days), settings.jobs_token)
+                                  staff_aad_ids=settings.staff_aad_ids, feed_lookback_days=settings.feed_lookback_days,
+                                  push=PushService(expo) if expo else None), settings.jobs_token)
     else:
         log.info("Phase 2 jobs disabled: %s", "JOBS_TOKEN is not set" if not settings.jobs_token
                  else "no Graph credentials")
@@ -123,6 +129,8 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
     async def on_cleanup(_: web.Application) -> None:
         if own_graph and graph is not None:
             await graph.close()
+        if expo is not None:
+            await expo.close()
         if ai is not None:
             await ai.close()
         await storage.close()

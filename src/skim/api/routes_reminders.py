@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from datetime import datetime, timedelta
-from typing import Callable
+from typing import Awaitable, Callable
 
 from aiohttp import web
 
@@ -31,7 +31,7 @@ def etag(items: list[dict]) -> str:
 
 
 def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey, now: Callable[[], datetime],
-               id_secret: str) -> None:
+               id_secret: str) -> Callable[[str], Awaitable[str]]:
     async def settings_of(uid: str) -> dict:
         u = await storage.get_app_user(uid)
         return user_settings.effective(u["settings"] if u else None)
@@ -177,9 +177,15 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
             return err(404, "not found")  # the id is taken by someone else's row: never answer "deleted" when nothing was
         return web.Response(status=204)
 
+    async def reminders_etag(uid: str) -> str:
+        """Same value GET /reminders returns, without building the notification texts (for /sync)."""
+        sched, *_ = await computed(uid)
+        return etag([{"id": x.id, "fire_at": cards.iso(x.fire_at)} for x in sched])
+
     sub.router.add_get("/reminders", get_reminders)
     sub.router.add_put("/reminders/{id}", put_reminder)
     sub.router.add_delete("/reminders/{id}", delete_reminder)
+    return reminders_etag
 
 
 def _future(v, now: datetime) -> datetime | None:
