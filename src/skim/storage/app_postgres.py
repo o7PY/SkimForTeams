@@ -225,15 +225,19 @@ class PostgresAppMixin:
         return [_d(r) for r in rows]
 
     # --- devices ---
-    async def upsert_device(self, user_id: str, token: str, platform: str, at: datetime) -> None:
-        """Register a token for this user. A token moves to the latest signed-in user (one phone, several accounts), but only
-        the same user re-enables a disabled token: an owner change never clears disabled_at."""
+    async def upsert_device(self, user_id: str, token: str, platform: str, at: datetime) -> bool:
+        """Register a token for this user. False ("taken") when another user holds it ACTIVE: a token never moves out from under
+        its current owner (they must unregister, i.e. sign out, first). A disabled token may move, and keeps its disabled flag
+        unless the same user re-registers it."""
         assert self.pool
-        await self.pool.execute(
+        r = await self.pool.fetchrow(
             """insert into devices (user_id, expo_push_token, platform, created_at, last_seen_at) values ($1,$2,$3,$4,$4)
                on conflict (expo_push_token) do update set user_id=excluded.user_id, platform=excluded.platform,
                  last_seen_at=excluded.last_seen_at,
-                 disabled_at = case when devices.user_id = excluded.user_id then null else devices.disabled_at end""", user_id, token, platform, at)
+                 disabled_at = case when devices.user_id = excluded.user_id then null else devices.disabled_at end
+                 where devices.user_id = excluded.user_id or devices.disabled_at is not null
+               returning 1""", user_id, token, platform, at)
+        return r is not None
 
     async def disable_device(self, token: str, at: datetime) -> None:
         assert self.pool

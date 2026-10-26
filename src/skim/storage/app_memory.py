@@ -217,15 +217,18 @@ class MemoryAppMixin:
         return sorted(rows, key=lambda r: (r["created_at"], r["id"]))
 
     # --- devices ---
-    async def upsert_device(self, user_id: str, token: str, platform: str, at: datetime) -> None:
+    async def upsert_device(self, user_id: str, token: str, platform: str, at: datetime) -> bool:
         d = self.devices.get(token)
         if d is None:
             self._device_seq += 1
             self.devices[token] = {"id": self._device_seq, "user_id": user_id, "expo_push_token": token,
                                    "platform": platform, "created_at": at, "last_seen_at": at, "disabled_at": None}
-        else:
-            same = d["user_id"] == user_id
-            d.update(user_id=user_id, platform=platform, last_seen_at=at, disabled_at=None if same else d["disabled_at"])
+            return True
+        same = d["user_id"] == user_id
+        if not same and d["disabled_at"] is None:
+            return False
+        d.update(user_id=user_id, platform=platform, last_seen_at=at, disabled_at=None if same else d["disabled_at"])
+        return True
 
     async def disable_device(self, token: str, at: datetime) -> None:
         d = self.devices.get(token)

@@ -26,7 +26,8 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
         mine = await storage.list_devices(uid, active_only=True)
         if token not in {d["expo_push_token"] for d in mine} and len(mine) >= MAX_DEVICES:
             return err(429, "too many devices registered; sign out of the others first")
-        await storage.upsert_device(uid, token, platform, now())
+        if not await storage.upsert_device(uid, token, platform, now()):
+            return err(409, "that device is registered to another account; sign out there first")
         return web.json_response({"ok": True})
 
     async def unregister(request: web.Request) -> web.Response:

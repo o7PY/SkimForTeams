@@ -39,10 +39,24 @@ async def test_unregister_removes_only_your_own_token(api):
     assert await api.store.list_devices(A) == []
 
 
-async def test_a_phone_that_signs_in_as_someone_else_takes_the_token_with_it(api):
+async def test_an_active_token_cannot_be_taken_by_another_account_until_its_owner_signs_out(api):
     await api.call("POST", "/devices", json={"expo_push_token": T2, "platform": "android"})
-    await api.call("POST", "/devices", "b", json={"expo_push_token": T2, "platform": "android"})
+    st, body = await api.call("POST", "/devices", "b", json={"expo_push_token": T2, "platform": "android"})
+    assert st == 409 and "another account" in body["error"]
+    assert len(await api.store.list_devices(A)) == 1 and await api.store.list_devices(B) == []   # nothing moved
+    assert (await api.call("POST", "/devices", json={"expo_push_token": T2, "platform": "android"}))[0] == 200   # the owner may re-register
+    assert (await api.call("DELETE", "/devices/" + quote(T2, safe="")))[0] == 204               # A signs out of the phone ...
+    assert (await api.call("POST", "/devices", "b", json={"expo_push_token": T2, "platform": "android"}))[0] == 200   # ... B can use it
     assert await api.store.list_devices(A) == [] and len(await api.store.list_devices(B)) == 1
+
+
+async def test_a_disabled_token_can_change_hands_but_stays_disabled_until_the_new_owner_registers_again(api):
+    await api.call("POST", "/devices", json={"expo_push_token": T2, "platform": "android"})
+    await api.store.disable_device(T2, NOW)                                                       # Expo said DeviceNotRegistered
+    assert (await api.call("POST", "/devices", "b", json={"expo_push_token": T2, "platform": "android"}))[0] == 200
+    assert await api.store.list_devices(B) == []
+    assert (await api.call("POST", "/devices", "b", json={"expo_push_token": T2, "platform": "android"}))[0] == 200
+    assert len(await api.store.list_devices(B)) == 1
 
 
 async def set_created(api, hours_ago):

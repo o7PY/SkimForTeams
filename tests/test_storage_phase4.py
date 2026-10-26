@@ -217,16 +217,16 @@ async def test_devices_register_move_disable_and_delete(store):
     assert [d["disabled_at"] is not None for d in await store.list_devices(U1, active_only=False)] == [True]
     await store.upsert_device(U1, "tok1", "android", NOW + timedelta(hours=3))               # re-register re-enables
     assert len(await store.list_devices(U1)) == 1
-    await store.upsert_device(U2, "tok1", "android", NOW + timedelta(hours=4))               # the phone changed account
-    assert await store.list_devices(U1) == [] and len(await store.list_devices(U2)) == 1
-    await store.disable_device("tok1", NOW + timedelta(hours=5))
-    await store.upsert_device(U1, "tok1", "android", NOW + timedelta(hours=6))               # a different user cannot re-enable it
-    assert await store.list_devices(U1) == [] and await store.list_devices(U2) == []
-    await store.upsert_device(U1, "tok1", "android", NOW + timedelta(hours=7))               # only the current owner (U1) can
+    assert await store.upsert_device(U2, "tok1", "android", NOW + timedelta(hours=4)) is False   # active under U1: not takeable
     assert len(await store.list_devices(U1)) == 1 and await store.list_devices(U2) == []
-    assert await store.delete_device(U2, "tok1") is False
-    assert await store.delete_device(U1, "tok1") is True
-    assert await store.list_devices(U1, active_only=False) == []
+    await store.disable_device("tok1", NOW + timedelta(hours=5))
+    assert await store.upsert_device(U2, "tok1", "android", NOW + timedelta(hours=6)) is True    # a disabled token may move ...
+    assert await store.list_devices(U1) == [] and await store.list_devices(U2) == []              # ... and stays disabled for the new owner
+    assert await store.upsert_device(U2, "tok1", "android", NOW + timedelta(hours=8)) is True    # only its owner re-enables it
+    assert len(await store.list_devices(U2)) == 1
+    assert await store.delete_device(U1, "tok1") is False
+    assert await store.delete_device(U2, "tok1") is True
+    assert await store.list_devices(U2, active_only=False) == []
 
 
 async def test_push_outbox_never_alerts_twice_and_follows_due_time_and_receipts(store):
