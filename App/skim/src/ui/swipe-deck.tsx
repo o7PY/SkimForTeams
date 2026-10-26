@@ -1,12 +1,12 @@
 // The swipe stack (P4-D-111). The top card follows the finger on the UI thread; nothing in the drag touches React state, so it stays
 // at the display's frame rate. Left = read, right = open. Everything the gesture can do is also a button or an accessibility action.
 import { useCallback, useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react';
-import { StyleSheet, useWindowDimensions, Vibration, View } from 'react-native';
+import { useWindowDimensions, Vibration, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { colors, radius, solid, space } from '@/constants/skim-theme';
+import { makeStyles, radius, space, useTheme } from '@/constants/theme';
 import type { Card } from '@/lib/types';
 import { stampProgress, swipeOutcome, tilt, type SwipeOutcome } from '@/lib/swipe';
 import { AppText } from './app-text';
@@ -19,6 +19,8 @@ const VISIBLE = 3;
 const FLY_MS = 200;
 
 export function SwipeDeck({ cards, onDismiss, onOpen, handle }: Props) {
+  const styles = useStyles();
+  const t = useTheme();
   const { width } = useWindowDimensions();
   const x = useSharedValue(0);
   const y = useSharedValue(0);
@@ -102,10 +104,10 @@ export function SwipeDeck({ cards, onDismiss, onOpen, handle }: Props) {
                 style={[styles.card, topStyle]}>
                 <DeckCard card={card} />
                 <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampRight, readStamp]}>
-                  <AppText variant="label" color={colors.accentSoft}>READ</AppText>
+                  <AppText variant="label" color={t.primary}>READ</AppText>
                 </Animated.View>
                 <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampLeft, openStamp]}>
-                  <AppText variant="label" color={colors.onSurface}>OPTIONS</AppText>
+                  <AppText variant="label" color={t.textPrimary}>OPTIONS</AppText>
                 </Animated.View>
               </Animated.View>
             </GestureDetector>
@@ -118,6 +120,7 @@ export function SwipeDeck({ cards, onDismiss, onOpen, handle }: Props) {
 }
 
 function BackCard({ depth, x, width }: { depth: number; x: ReturnType<typeof useSharedValue<number>>; width: number }) {
+  const styles = useStyles();
   // A plain SOLID shape, no content and no fading: whatever sits behind the top card must never show through it. Each one steps
   // forward one place as the top card is dragged away.
   const style = useAnimatedStyle(() => {
@@ -129,11 +132,11 @@ function BackCard({ depth, x, width }: { depth: number; x: ReturnType<typeof use
   return <Animated.View pointerEvents="none" style={[styles.card, styles.back, style]} />;
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   stack: { flex: 1 },
   card: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 28 },
-  back: { backgroundColor: solid.card, borderColor: solid.cardBorder, borderWidth: 1, borderRadius: radius.lg },
+  back: { backgroundColor: t.surfaceRaised, borderColor: t.border, borderWidth: 1, borderRadius: radius.lg },
   stamp: { position: 'absolute', top: space.lg, paddingHorizontal: space.md, paddingVertical: 6, borderRadius: radius.md, borderWidth: 1.5 },
-  stampRight: { right: space.lg, borderColor: colors.borderAccent, backgroundColor: 'rgba(56,189,248,0.18)' },
-  stampLeft: { left: space.lg, borderColor: colors.borderGlass, backgroundColor: 'rgba(255,255,255,0.14)' },
-});
+  stampRight: { right: space.lg, borderColor: t.primaryBorder, backgroundColor: t.primarySoft },
+  stampLeft: { left: space.lg, borderColor: t.border, backgroundColor: t.inset },
+}));

@@ -1,8 +1,8 @@
 // Important (PHASE4.md 7.2 item 7, P4-D-125): which kinds of event matter. Ticked types are shown in red, get automatic reminders
 // (if that is on) and can send date-change alerts.
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
-import { colors, space } from '@/constants/skim-theme';
+import { makeStyles, space, useTheme } from '@/constants/theme';
 import { EVENT_TYPE_LABEL } from '@/lib/format';
 import { EVENT_TYPES, toggleType } from '@/lib/settings';
 import { useSettings } from '@/lib/use-settings';
@@ -17,14 +17,16 @@ const DESCRIPTION: Record<string, string> = {
 };
 
 export default function Important() {
+  const styles = useStyles();
+  const t = useTheme();
   const { settings, update } = useSettings();
   return (
     <TabScreen title="Important" subtitle="What should stand out">
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <AppText variant="body" color={colors.onSurfaceVariant}>Ticked kinds are shown in red, and can remind you and alert you when their date changes.</AppText>
+        <AppText variant="body" color={t.textSecondary}>Ticked kinds are shown in red, and can remind you and alert you when their date changes.</AppText>
         <View style={styles.list}>
           {EVENT_TYPES.map((t) => (
-            <CheckRow key={t} label={EVENT_TYPE_LABEL[t]} detail={DESCRIPTION[t]} checked={settings.important_types.includes(t)}
+            <CheckRow key={t} type={t} label={EVENT_TYPE_LABEL[t]} detail={DESCRIPTION[t]} checked={settings.important_types.includes(t)}
               onChange={() => void update({ important_types: toggleType(settings.important_types, t) })} />
           ))}
         </View>
@@ -39,7 +41,7 @@ export default function Important() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   scroll: { gap: space.md, paddingBottom: space.md },
   list: { gap: space.sm },
-});
+}));

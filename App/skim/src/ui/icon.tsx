@@ -2,10 +2,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 
-import { colors } from '@/constants/skim-theme';
+import { useTheme } from '@/constants/theme';
 
 export type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
-export function Icon({ name, size = 24, color = colors.onSurface }: { name: IconName; size?: number; color?: string }) {
-  return <MaterialCommunityIcons name={name} size={size} color={color} />;
+export function Icon({ name, size = 24, color }: { name: IconName; size?: number; color?: string }) {
+  const t = useTheme();
+  return <MaterialCommunityIcons name={name} size={size} color={color ?? t.textPrimary} />;
 }

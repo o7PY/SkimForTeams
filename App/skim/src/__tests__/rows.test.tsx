@@ -1,6 +1,6 @@
 import { act, create, type ReactTestInstance } from 'react-test-renderer';
 
-import { solid } from '@/constants/skim-theme';
+import { themes } from '@/constants/theme';
 import { confirmsDelete } from '@/lib/confirm';
 import { CardRow, CheckRow, Empty, StepperRow, SwitchRow } from '@/ui/rows';
 
@@ -52,7 +52,7 @@ describe('CardRow', () => {
     const r = render(<CardRow card={card({ events: [event()] })} now={NOW} onOpen={jest.fn()} action={{ icon: 'undo-variant', label: 'x', onPress: jest.fn() }} />);
     expect(words(r)).toContain('Quiz');
     const root = r.toJSON() as unknown as { props: { style: unknown } };
-    expect(flat(root.props.style).backgroundColor).toBe(solid.cardHot);
+    expect(flat(root.props.style).backgroundColor).toBe(themes.light.important.fill);
     const del = card({ message: { ...messageCard().message!, deleted: true, text: '' } });
     expect(words(render(<CardRow card={del} now={NOW} onOpen={jest.fn()} action={{ icon: 'undo-variant', label: 'x', onPress: jest.fn() }} />))).toContain('deleted in Teams');
   });

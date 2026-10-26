@@ -1,8 +1,8 @@
 // Starred (PHASE4.md 7.2 item 6): permanent stars, and temporary ones with how long they have left.
 import { router } from 'expo-router';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, View } from 'react-native';
 
-import { colors, space } from '@/constants/skim-theme';
+import { makeStyles, space, useTheme } from '@/constants/theme';
 import { starExpiryLabel } from '@/lib/format';
 import { useListActions, useStarred } from '@/lib/lists';
 import { AppText } from '@/ui/app-text';
@@ -10,6 +10,8 @@ import { CardRow, Empty } from '@/ui/rows';
 import { TabScreen } from '@/ui/tab-screen';
 
 export default function Starred() {
+  const styles = useStyles();
+  const t = useTheme();
   const s = useStarred();
   const actions = useListActions();
   const now = new Date();
@@ -20,15 +22,15 @@ export default function Starred() {
   return (
     <TabScreen title="Starred" subtitle={cards.length ? `${cards.length} saved` : undefined}>
       {s.isPending && !s.data ? (
-        <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator color={t.primary} /></View>
       ) : (
         <FlatList
           data={cards}
           keyExtractor={(c) => String(c.id)}
           contentContainerStyle={cards.length ? styles.list : styles.fill}
           ItemSeparatorComponent={() => <View style={styles.gap} />}
-          refreshControl={<RefreshControl refreshing={s.isRefetching} onRefresh={() => void s.refetch()} tintColor={colors.primary} colors={[colors.primary]} progressBackgroundColor={colors.surfaceAlt} />}
-          ListHeaderComponent={failed ? <AppText variant="body" color={colors.error}>Can’t load your stars. Pull down to try again.</AppText> : undefined}
+          refreshControl={<RefreshControl refreshing={s.isRefetching} onRefresh={() => void s.refetch()} tintColor={t.primary} colors={[t.primary]} progressBackgroundColor={t.surfaceRaised} />}
+          ListHeaderComponent={failed ? <AppText variant="body" color={t.warning}>Can’t load your stars. Pull down to try again.</AppText> : undefined}
           ListEmptyComponent={failed ? undefined : <Empty icon="star-outline" title="No stars yet" text="Open a card and tap Star to keep it here, or star it for a day or a week." />}
           renderItem={({ item }) => (
             <CardRow
@@ -45,9 +47,9 @@ export default function Starred() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   list: { paddingBottom: space.md },
   fill: { flexGrow: 1 },
   gap: { height: space.sm + 2 },
-});
+}));

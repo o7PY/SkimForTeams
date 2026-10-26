@@ -1,8 +1,7 @@
 // The four tabs (PHASE4.md 7.2): Deck, History, Starred, Important. A floating bar with a solid surface (P4-D-173).
 import { Tabs } from 'expo-router';
-import { StyleSheet } from 'react-native';
 
-import { colors, radius, solid } from '@/constants/skim-theme';
+import { makeStyles, radius, useTheme } from '@/constants/theme';
 import { FONT } from '@/ui/app-text';
 import { Icon, type IconName } from '@/ui/icon';
 
@@ -14,29 +13,31 @@ const TABS: { name: string; title: string; on: IconName; off: IconName }[] = [
 ];
 
 export default function TabsLayout() {
+  const styles = useStyles();
+  const t = useTheme();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
+        tabBarActiveTintColor: t.primary,
+        tabBarInactiveTintColor: t.textSecondary,
         tabBarStyle: styles.bar,
         tabBarLabelStyle: styles.label,
         tabBarItemStyle: styles.item,
-        sceneStyle: { backgroundColor: colors.surface },
+        sceneStyle: { backgroundColor: t.background },
       }}>
-      {TABS.map((t) => (
-        <Tabs.Screen key={t.name} name={t.name} options={{ title: t.title, tabBarIcon: ({ focused, color }) => <Icon name={focused ? t.on : t.off} size={24} color={String(color)} /> }} />
+      {TABS.map((tab) => (
+        <Tabs.Screen key={tab.name} name={tab.name} options={{ title: tab.title, tabBarIcon: ({ focused, color }) => <Icon name={focused ? tab.on : tab.off} size={24} color={String(color)} /> }} />
       ))}
     </Tabs>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   bar: {
     position: 'absolute', left: 16, right: 16, bottom: 16, height: 64, paddingBottom: 0, paddingTop: 0, borderRadius: radius.lg,
-    backgroundColor: solid.card, borderWidth: 1, borderTopWidth: 1, borderColor: solid.cardBorder, borderTopColor: solid.cardBorder, elevation: 8,
+    backgroundColor: t.surfaceRaised, borderWidth: 1, borderTopWidth: 1, borderColor: t.border, borderTopColor: t.border, elevation: 8,
   },
   item: { paddingVertical: 8 },
   label: { fontFamily: FONT[600], fontSize: 10, letterSpacing: 0.2, textTransform: 'uppercase' },
-});
+}));

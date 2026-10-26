@@ -1,9 +1,9 @@
 // The deck (home). Swipe left = read, right = options (opens the card); the buttons below do the same for anyone who cannot swipe.
 import { Redirect, router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
 
-import { colors, radius, space } from '@/constants/skim-theme';
+import { makeStyles, radius, space, useTheme } from '@/constants/theme';
 import { useDeck, useDeckActions } from '@/lib/deck';
 import { useSubscriptions } from '@/lib/queries';
 import type { Card } from '@/lib/types';
@@ -18,6 +18,8 @@ const UNDO_MS = 5000;
 const PREFETCH_WHEN_FEWER_THAN = 8;
 
 export default function DeckScreen() {
+  const styles = useStyles();
+  const t = useTheme();
   const subs = useSubscriptions();
   const deck = useDeck();
   const actions = useDeckActions();
@@ -74,20 +76,20 @@ export default function DeckScreen() {
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={pulling} onRefresh={refresh} tintColor={colors.primary} colors={[colors.primary]} progressBackgroundColor={colors.surfaceAlt} />}>
+        refreshControl={<RefreshControl refreshing={pulling} onRefresh={refresh} tintColor={t.primary} colors={[t.primary]} progressBackgroundColor={t.surfaceRaised} />}>
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+          <View style={styles.center}><ActivityIndicator color={t.primary} /></View>
         ) : failed ? (
           <View style={styles.center}>
-            <Icon name="cloud-off-outline" size={40} color={colors.onSurfaceMuted} />
+            <Icon name="cloud-off-outline" size={40} color={t.textSecondary} />
             <AppText variant="headlineSm">Can’t load your deck</AppText>
-            <AppText variant="body" color={colors.onSurfaceVariant} style={styles.centerText}>Check your connection, then pull down to try again.</AppText>
+            <AppText variant="body" color={t.textSecondary} style={styles.centerText}>Check your connection, then pull down to try again.</AppText>
           </View>
         ) : cards.length === 0 ? (
           <View style={styles.center}>
-            <Icon name="check-circle-outline" size={56} color={colors.primary} />
+            <Icon name="check-circle-outline" size={56} color={t.primary} />
             <AppText variant="headlineMd">All caught up</AppText>
-            <AppText variant="body" color={colors.onSurfaceVariant} style={styles.centerText}>New posts, files and date changes from your courses will show up here.</AppText>
+            <AppText variant="body" color={t.textSecondary} style={styles.centerText}>New posts, files and date changes from your courses will show up here.</AppText>
           </View>
         ) : (
           <SwipeDeck cards={cards} onDismiss={onDismiss} onOpen={onOpen} handle={handle} />
@@ -103,7 +105,7 @@ export default function DeckScreen() {
 
       {undoable ? (
         <View accessibilityLiveRegion="polite" style={styles.toast}>
-          <AppText variant="label" color={colors.onSurfaceVariant}>Marked as read</AppText>
+          <AppText variant="label" color={t.textSecondary}>Marked as read</AppText>
           <TextButton label="Undo" onPress={undo} />
         </View>
       ) : null}
@@ -111,7 +113,7 @@ export default function DeckScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   scroll: { flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md, paddingHorizontal: space.lg },
   centerText: { textAlign: 'center' },
@@ -119,6 +121,6 @@ const styles = StyleSheet.create({
   openButton: { flex: 1 },
   toast: {
     position: 'absolute', left: 0, right: 0, bottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: space.md, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderGlass, backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: space.md, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceRaised,
   },
-});
+}));

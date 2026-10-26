@@ -11,7 +11,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'skim',
-  userInterfaceStyle: 'dark', // Design.md is a dark-only "Midnight Glass" theme
+  userInterfaceStyle: 'automatic', // light and dark both ship (P5-D-104); the app follows the phone's setting
   ios: { icon: './assets/expo.icon' }, // kept iOS-safe, never built in Phase 4 (P4-D-101)
   android: {
     package: 'in.skimforteams.app',

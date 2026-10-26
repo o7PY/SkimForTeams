@@ -1,6 +1,7 @@
 // Registering this phone for change alerts (PHASE4.md section 7.3, P4-D-121, P4-D-161). The notification module is injected so the
 // rules can be tested: permission is asked for only when told to (after the first successful join), channels exist before the
 // Android 13 prompt, a token another account holds is reported (409), and sign-out unregisters first.
+import { NOTIFICATION_COLOR } from '../constants/theme';
 import { ApiError, type Api } from './api';
 import type { KeyValue } from './outbox';
 
@@ -44,7 +45,7 @@ export async function registerDevice(d: PushDeps, opts: { ask: boolean }): Promi
   // The Android 13 permission prompt only appears once a channel exists, and tokens need the channels anyway.
   for (const c of CHANNELS) {
     await d.notifications.setNotificationChannelAsync(c.id, {
-      name: c.name, description: c.description, importance: d.notifications.AndroidImportance.HIGH, lightColor: '#38BDF8',
+      name: c.name, description: c.description, importance: d.notifications.AndroidImportance.HIGH, lightColor: NOTIFICATION_COLOR,
     });
   }
   let perm = await d.notifications.getPermissionsAsync();

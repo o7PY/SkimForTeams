@@ -1,6 +1,6 @@
 import { act, create, type ReactTestInstance } from 'react-test-renderer';
 
-import { important as red, solid } from '@/constants/skim-theme';
+import { themes } from '@/constants/theme';
 import type { Card } from '@/lib/types';
 import { DeckCard } from '@/ui/deck-card';
 
@@ -58,17 +58,17 @@ test('a student author is named without the Staff tag; no author line when there
 
 test('an important event turns the card red and names its type; an ordinary card does not', () => {
   const hot = render(messageCard({ events: [event()] }));
-  expect(rootStyle(hot).borderColor).toBe(red.border);
-  expect(rootStyle(hot).backgroundColor).toBe(solid.cardHot);
+  expect(rootStyle(hot).borderColor).toBe(themes.light.important.border);
+  expect(rootStyle(hot).backgroundColor).toBe(themes.light.important.fill);
   expect(all(hot)).toContain('Quiz');
   const calm = render(messageCard({ events: [event({ important: false })] }));
-  expect(rootStyle(calm).borderColor).not.toBe(red.border);
-  expect(rootStyle(render(messageCard())).borderColor).not.toBe(red.border);
+  expect(rootStyle(calm).borderColor).not.toBe(themes.light.important.border);
+  expect(rootStyle(render(messageCard())).borderColor).not.toBe(themes.light.important.border);
 });
 
 test('a cancelled important event is not highlighted, and its line says so', () => {
   const r = render(messageCard({ events: [event({ status: 'cancelled' })] }));
-  expect(rootStyle(r).borderColor).not.toBe(red.border);
+  expect(rootStyle(r).borderColor).not.toBe(themes.light.important.border);
   expect(all(r)).toContain('cancelled');
 });
 
@@ -130,7 +130,7 @@ test('a change card shows what moved: the label, the old time struck through, th
   expect(t).toContain('Mon 2 Nov, 10:00');
   const old = r.root.findAll((n) => isText(n) && n.children.join('') === 'Fri 30 Oct, 10:00')[0];
   expect(flat(old.props.style).textDecorationLine).toBe('line-through');
-  expect(rootStyle(r).borderColor).toBe(red.border); // a moved quiz is still an important thing
+  expect(rootStyle(r).borderColor).toBe(themes.light.important.border); // a moved quiz is still an important thing
 });
 
 test('a change card lists no separate event line (the change block already says it)', () => {
@@ -179,7 +179,7 @@ test('a card is NEVER see-through: its surface is a solid colour in every state 
     const bg = rootStyle(render(card)).backgroundColor as string;
     expect(bg).toMatch(OPAQUE);
   }
-  for (const c of Object.values(solid)) expect(c).toMatch(OPAQUE);
+  for (const th of Object.values(themes)) for (const c of [th.surfaceRaised, th.surface, th.inset, th.primarySoft, th.important.fill]) expect(c).toMatch(OPAQUE);
 });
 
 test('the change block inside a card is solid too', () => {

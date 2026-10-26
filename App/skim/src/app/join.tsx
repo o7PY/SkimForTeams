@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, TextInput, View } from 'react-native';
 
-import { colors, radius, solid, space } from '@/constants/skim-theme';
+import { makeStyles, radius, space, useTheme } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { alreadyJoinedTeam, canSubmit, joinErrorMessage, normalizeCode, type TeamInfo } from '@/lib/join';
 import { usePush } from '@/lib/push-runtime';
@@ -15,6 +15,8 @@ import { Icon } from '@/ui/icon';
 import { Screen } from '@/ui/screen';
 
 export default function Join() {
+  const styles = useStyles();
+  const t = useTheme();
   const { api } = useAuth();
   const qc = useQueryClient();
   const push = usePush();
@@ -53,10 +55,10 @@ export default function Join() {
     return (
       <Screen>
         <View style={styles.center}>
-          <Icon name="check-circle-outline" size={56} color={colors.primary} />
+          <Icon name="check-circle-outline" size={56} color={t.primary} />
           <AppText variant="headlineLg">{joined.already ? 'You’re already in' : 'You’ve joined'}</AppText>
-          <AppText variant="headlineMd" color={colors.accentSoft}>{joined.team.name ?? 'your course'}</AppText>
-          <AppText variant="body" color={colors.onSurfaceVariant}>
+          <AppText variant="headlineMd" color={t.primary}>{joined.team.name ?? 'your course'}</AppText>
+          <AppText variant="body" color={t.textSecondary}>
             {joined.already ? 'Nothing changed.' : 'The last 7 days of posts and anything about an upcoming date are in your deck.'}
           </AppText>
         </View>
@@ -72,13 +74,13 @@ export default function Join() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <View style={styles.center}>
           <AppText variant="headlineLg">Join a team</AppText>
-          <AppText variant="body" color={colors.onSurfaceVariant}>Type the code your professor’s Skim bot posted in the class team.</AppText>
+          <AppText variant="body" color={t.textSecondary}>Type the code your professor’s Skim bot posted in the class team.</AppText>
           <TextInput
             accessibilityLabel="Team code"
             value={code}
             onChangeText={(t) => { setCode(normalizeCode(t)); setError(null); }}
             placeholder="R6BVE4"
-            placeholderTextColor={colors.onSurfaceMuted}
+            placeholderTextColor={t.textSecondary}
             autoCapitalize="characters"
             autoCorrect={false}
             autoComplete="off"
@@ -89,7 +91,7 @@ export default function Join() {
             editable={!busy}
             style={styles.input}
           />
-          {error ? <AppText variant="body" color={colors.error} accessibilityLiveRegion="polite">{error}</AppText> : null}
+          {error ? <AppText variant="body" color={t.warning} accessibilityLiveRegion="polite">{error}</AppText> : null}
         </View>
         <View style={styles.actions}>
           <PrimaryButton label="Join team" busy={busy} disabled={!canSubmit(code)} onPress={submit} />
@@ -100,12 +102,12 @@ export default function Join() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', gap: space.md },
   input: {
-    height: 64, borderRadius: radius.md, borderWidth: 1, borderColor: solid.cardBorder, backgroundColor: solid.card,
-    color: colors.onSurface, fontFamily: 'Manrope_700Bold', fontSize: 28, letterSpacing: 6, textAlign: 'center', paddingHorizontal: space.md,
+    height: 64, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceRaised,
+    color: t.textPrimary, fontFamily: 'Manrope_700Bold', fontSize: 28, letterSpacing: 6, textAlign: 'center', paddingHorizontal: space.md,
   },
   actions: { gap: space.sm, paddingBottom: space.md, alignItems: 'stretch' },
-});
+}));

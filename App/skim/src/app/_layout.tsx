@@ -1,12 +1,12 @@
 import { Manrope_300Light, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, useFonts } from '@expo-google-fonts/manrope';
-import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { colors, space } from '@/constants/skim-theme';
+import { makeStyles, space, useTheme, type Theme } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { loaded } from '@/lib/config';
 import { NotificationsRuntime } from '@/lib/notifications-runtime';
@@ -17,10 +17,14 @@ import { AppText } from '@/ui/app-text';
 
 SplashScreen.preventAutoHideAsync();
 
-const theme = { ...DarkTheme, colors: { ...DarkTheme.colors, background: colors.surface, card: colors.surface, primary: colors.primary } };
+const navTheme = (t: Theme) => {
+  const base = t.scheme === 'dark' ? DarkTheme : DefaultTheme;
+  return { ...base, colors: { ...base.colors, background: t.background, card: t.background, primary: t.primary } };
+};
 
 function Routes({ ready }: { ready: boolean }) {
   const { status } = useAuth();
+  const t = useTheme();
   useEffect(() => {
     if (status !== 'loading' && ready) SplashScreen.hideAsync();
   }, [status, ready]);
@@ -29,7 +33,7 @@ function Routes({ ready }: { ready: boolean }) {
     <>
       <NotificationsRuntime />
       <OfflineSync />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface }, animation: 'fade_from_bottom' }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.background }, animation: 'fade_from_bottom' }}>
         <Stack.Protected guard={status === 'signedIn'}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="join" />
@@ -46,6 +50,8 @@ function Routes({ ready }: { ready: boolean }) {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({ Manrope_300Light, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold });
+  const t = useTheme();
+  const styles = useStyles();
   const ready = fontsLoaded || !!fontError; // a font that fails to load must not keep the app on the splash screen
 
   if (!('config' in loaded)) {
@@ -55,15 +61,15 @@ export default function RootLayout() {
       <View style={styles.problem}>
         <AppText variant="headlineMd">This build is missing its settings</AppText>
         {loaded.problems.map((p) => (
-          <AppText key={p} variant="body" color={colors.onSurfaceVariant}>{p}</AppText>
+          <AppText key={p} variant="body" color={t.textSecondary}>{p}</AppText>
         ))}
       </View>
     );
   }
   return (
     <GestureHandlerRootView style={styles.root}>
-      <ThemeProvider value={theme}>
-        <StatusBar style="light" />
+      <ThemeProvider value={navTheme(t)}>
+        <StatusBar style={t.scheme === 'dark' ? 'light' : 'dark'} />
         <AuthProvider>
           <SessionProviders>
             <Routes ready={ready} />
@@ -74,7 +80,7 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
-  problem: { flex: 1, backgroundColor: colors.surface, justifyContent: 'center', padding: space.gutter, gap: space.sm },
-});
+const useStyles = makeStyles((t) => ({
+  root: { flex: 1, backgroundColor: t.background },
+  problem: { flex: 1, backgroundColor: t.background, justifyContent: 'center', padding: space.gutter, gap: space.sm },
+}));

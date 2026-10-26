@@ -3,6 +3,7 @@ import * as Notifications from 'expo-notifications';
 import { AndroidImportance } from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { NOTIFICATION_COLOR } from '../constants/theme';
 import { CHANNELS } from './push-registration';
 import type { Planned, SchedulerLike } from './reminder-plan';
 
@@ -15,7 +16,7 @@ export function ensureChannels(): Promise<void> {
   if (Platform.OS !== 'android') return Promise.resolve();
   channelsReady ??= (async () => {
     for (const c of CHANNELS) {
-      await Notifications.setNotificationChannelAsync(c.id, { name: c.name, description: c.description, importance: AndroidImportance.HIGH, lightColor: '#38BDF8' });
+      await Notifications.setNotificationChannelAsync(c.id, { name: c.name, description: c.description, importance: AndroidImportance.HIGH, lightColor: NOTIFICATION_COLOR });
     }
   })().catch((e) => {
     channelsReady = null;

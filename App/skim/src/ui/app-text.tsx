@@ -1,7 +1,7 @@
 // Typography from Design.md ("Manrope"). Weight picks the font file; letter spacing is em in the design, px here.
 import { StyleSheet, Text, type TextProps, type TextStyle } from 'react-native';
 
-import { colors } from '@/constants/skim-theme';
+import { useTheme } from '@/constants/theme';
 
 export const FONT = { 300: 'Manrope_300Light', 500: 'Manrope_500Medium', 600: 'Manrope_600SemiBold', 700: 'Manrope_700Bold' } as const;
 
@@ -28,8 +28,9 @@ export function variantStyle(v: Variant): TextStyle {
 
 export type AppTextProps = TextProps & { variant?: Variant; color?: string };
 
-export function AppText({ variant = 'body', color = colors.onSurface, style, ...rest }: AppTextProps) {
-  return <Text {...rest} style={[styles.base, variantStyle(variant), { color }, style]} />;
+export function AppText({ variant = 'body', color, style, ...rest }: AppTextProps) {
+  const t = useTheme();
+  return <Text {...rest} style={[styles.base, variantStyle(variant), { color: color ?? t.textPrimary }, style]} />;
 }
 
 const styles = StyleSheet.create({ base: { includeFontPadding: false } });

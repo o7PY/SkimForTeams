@@ -1,9 +1,9 @@
 // Settings (PHASE4.md 7.2 item 8): Teams, Notifications, Reminders, History size, Account.
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Linking, ScrollView, TextInput, View } from 'react-native';
 
-import { colors, radius, solid, space } from '@/constants/skim-theme';
+import { makeStyles, radius, space, teamAccent, useTheme } from '@/constants/theme';
 import { toIstIso } from '@/lib/actions';
 import { formatTime } from '@/lib/format';
 import { exactAlarmStatus, requestExactAlarm, scheduleTestReminder, type ExactAlarm } from '@/lib/notif-adapter';
@@ -27,6 +27,8 @@ import { OptionRow, Sheet } from '@/ui/sheet';
 const TIME_STEP = 15; // minutes per tap on a time of day
 
 export default function Settings() {
+  const styles = useStyles();
+  const t = useTheme();
   const subs = useSubscriptions();
   const outbox = useOutbox();
   const push = usePush();
@@ -74,19 +76,20 @@ export default function Settings() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {!ready ? <AppText variant="bodySm" color={colors.onSurfaceMuted}>Showing saved settings; changes sync when you’re online.</AppText> : null}
+        {!ready ? <AppText variant="bodySm" color={t.textSecondary}>Showing saved settings; changes sync when you’re online.</AppText> : null}
 
         <SectionTitle>Teams</SectionTitle>
-        {!subs.data ? <AppText variant="body" color={colors.error}>Can’t load your teams right now. Check your connection.</AppText> : null}
-        {subs.data?.map((t) => (
-          <View key={t.id} style={styles.team}>
+        {!subs.data ? <AppText variant="body" color={t.warning}>Can’t load your teams right now. Check your connection.</AppText> : null}
+        {subs.data?.map((team) => (
+          <View key={team.id} style={styles.team}>
             <View style={styles.teamHead}>
-              <AppText variant="headlineSm" style={styles.flex} numberOfLines={2}>{t.name ?? 'Course'}</AppText>
-              {t.ended ? <Pill tone="muted" text="Ended" /> : null}
+              <View style={[styles.teamDot, { backgroundColor: teamAccent(t, team.id) }]} />
+              <AppText variant="headlineSm" style={styles.flex} numberOfLines={2}>{team.name ?? 'Course'}</AppText>
+              {team.ended ? <Pill tone="muted" text="Ended" /> : null}
             </View>
-            {t.ended ? <AppText variant="caption" color={colors.onSurfaceMuted}>The bot was removed, so no new cards will arrive. Your history and stars stay.</AppText> : null}
-            <SwitchRow label="Mute alerts" detail="Cards and reminders still come; only push alerts stop" value={t.muted} onChange={(v) => void teams.setMuted(t, v)} />
-            <SecondaryButton label="Leave this team" icon="logout-variant" danger onPress={() => confirmLeave(t.id)} />
+            {team.ended ? <AppText variant="caption" color={t.textSecondary}>The bot was removed, so no new cards will arrive. Your history and stars stay.</AppText> : null}
+            <SwitchRow label="Mute alerts" detail="Cards and reminders still come; only push alerts stop" value={team.muted} onChange={(v) => void teams.setMuted(team, v)} />
+            <SecondaryButton label="Leave this team" icon="logout-variant" danger onPress={() => confirmLeave(team.id)} />
           </View>
         ))}
         <SecondaryButton label="Join another team" icon="plus" disabled={busy !== null} onPress={() => router.push('/join')} />
@@ -141,9 +144,9 @@ export default function Settings() {
           minusDisabled={settings.history_limit <= HISTORY_CHOICES[0]} plusDisabled={settings.history_limit >= HISTORY_RANGE.max}
           onMinus={() => void update({ history_limit: stepHistory(settings.history_limit, -1) })} onPlus={() => void update({ history_limit: stepHistory(settings.history_limit, 1) })} />
 
-        {outbox.pending > 0 ? <AppText variant="body" color={colors.onSurfaceVariant}>{outbox.pending} change{outbox.pending === 1 ? '' : 's'} waiting to sync</AppText> : null}
-        {outbox.notice ? <AppText variant="bodySm" color={colors.accentSoft} onPress={outbox.dismissNotice}>{outbox.notice} (tap to dismiss)</AppText> : null}
-        {push.notice ? <AppText variant="bodySm" color={colors.accentSoft} onPress={push.dismissNotice}>{push.notice} (tap to dismiss)</AppText> : null}
+        {outbox.pending > 0 ? <AppText variant="body" color={t.textSecondary}>{outbox.pending} change{outbox.pending === 1 ? '' : 's'} waiting to sync</AppText> : null}
+        {outbox.notice ? <AppText variant="bodySm" color={t.primary} onPress={outbox.dismissNotice}>{outbox.notice} (tap to dismiss)</AppText> : null}
+        {push.notice ? <AppText variant="bodySm" color={t.primary} onPress={push.dismissNotice}>{push.notice} (tap to dismiss)</AppText> : null}
 
         <SectionTitle>Account</SectionTitle>
         <SecondaryButton label={busy === 'signout' ? 'Signing out…' : 'Sign out'} icon="logout" disabled={busy !== null}
@@ -152,13 +155,13 @@ export default function Settings() {
       </ScrollView>
 
       <Sheet visible={deleting} title="Delete your account?" onClose={() => (busy === 'delete' ? undefined : setDeleting(false))}>
-        <AppText variant="body" color={colors.onSurfaceVariant}>
+        <AppText variant="body" color={t.textSecondary}>
           This removes your teams, history, stars, reminders and devices from Skim, and your sign-in. It can’t be undone. Your professor and the Teams posts are not affected.
         </AppText>
         <AppText variant="label">Type {DELETE_WORD} to confirm</AppText>
         <TextInput accessibilityLabel={`Type ${DELETE_WORD} to confirm`} value={typed} onChangeText={(t) => { setTyped(t); setDeleteError(null); }} autoCapitalize="characters" autoCorrect={false} autoComplete="off"
-          spellCheck={false} placeholder={DELETE_WORD} placeholderTextColor={colors.onSurfaceMuted} editable={busy !== 'delete'} style={styles.input} />
-        {deleteError ? <AppText variant="body" color={colors.error} accessibilityLiveRegion="polite">{deleteError}</AppText> : null}
+          spellCheck={false} placeholder={DELETE_WORD} placeholderTextColor={t.textSecondary} editable={busy !== 'delete'} style={styles.input} />
+        {deleteError ? <AppText variant="body" color={t.warning} accessibilityLiveRegion="polite">{deleteError}</AppText> : null}
         <PrimaryButton label="Delete my account" busy={busy === 'delete'} disabled={!confirmsDelete(typed)}
           onPress={async () => {
             setBusy('delete');
@@ -171,12 +174,13 @@ export default function Settings() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: space.sm, paddingBottom: space.md },
   spacer: { width: 48 },
   flex: { flex: 1 },
   scroll: { gap: space.sm + 2, paddingBottom: space.xl * 2 },
-  team: { gap: space.sm, padding: space.md, borderRadius: radius.lg, backgroundColor: solid.card, borderWidth: 1, borderColor: solid.cardBorder },
+  team: { gap: space.sm, padding: space.md, borderRadius: radius.lg, backgroundColor: t.surfaceRaised, borderWidth: 1, borderColor: t.border },
   teamHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  input: { height: 56, borderRadius: radius.md, borderWidth: 1, borderColor: solid.cardBorder, backgroundColor: '#323A4B', color: colors.onSurface, fontFamily: 'Manrope_700Bold', fontSize: 18, letterSpacing: 4, textAlign: 'center' },
-});
+  teamDot: { width: 12, height: 12, borderRadius: 6 },
+  input: { height: 56, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.inset, color: t.textPrimary, fontFamily: 'Manrope_700Bold', fontSize: 18, letterSpacing: 4, textAlign: 'center' },
+}));

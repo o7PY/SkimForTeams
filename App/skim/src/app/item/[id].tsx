@@ -3,9 +3,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, View } from 'react-native';
 
-import { colors, radius, solid, space } from '@/constants/skim-theme';
+import { makeStyles, radius, space, tint, useTheme } from '@/constants/theme';
 import {
   absolutePresets, calendarEventFor, composeAbsolute, defaultPickerTime, fileUrl, offsetPresets, safeUrl, snoozeOptions, starLabel, tempStarOptions, upcomingEvent, type TempStar,
 } from '@/lib/actions';
@@ -26,6 +26,8 @@ import { TimePicker, type PickerValue } from '@/ui/time-picker';
 type SheetName = 'remind' | 'star' | 'snooze' | null;
 
 export default function Item() {
+  const styles = useStyles();
+  const t = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useAuth();
   const q = useQuery({ ...itemOptions(api, id ?? ''), enabled: /^\d+$/.test(id ?? '') });
@@ -51,7 +53,7 @@ export default function Item() {
       <Screen>
         <View style={styles.top}><IconButton icon="close" label="Close" onPress={close} /></View>
         <View style={styles.center}>
-          {q.isPending && !q.data ? <ActivityIndicator color={colors.primary} /> : <AppText variant="body" color={colors.onSurfaceVariant}>This card isn’t available.</AppText>}
+          {q.isPending && !q.data ? <ActivityIndicator color={t.primary} /> : <AppText variant="body" color={t.textSecondary}>This card isn’t available.</AppText>}
         </View>
       </Screen>
     );
@@ -79,7 +81,7 @@ export default function Item() {
           {dated && rec.length > 0 && !recommendedAlreadySet(card) ? (
             <PrimaryButton label="Recommended reminders" icon="bell-plus-outline" onPress={() => run(actions.addRecommended())} />
           ) : null}
-          {dated && rec.length > 0 && !recommendedAlreadySet(card) ? <AppText variant="caption" color={colors.onSurfaceMuted} style={styles.hint}>{recTimes}</AppText> : null}
+          {dated && rec.length > 0 && !recommendedAlreadySet(card) ? <AppText variant="caption" color={t.textSecondary} style={styles.hint}>{recTimes}</AppText> : null}
 
           <OptionRow icon="bell-outline" label="Remind me…" detail="Before the event, or at a time you pick" onPress={() => setSheet('remind')} />
           {card.user.starred
@@ -97,7 +99,7 @@ export default function Item() {
             <SectionLabel text="Your reminders" />
             {card.user.reminders.map((r) => (
               <View key={r.id} style={styles.line}>
-                <Icon name="bell-ring-outline" size={18} color={colors.accentSoft} />
+                <Icon name="bell-ring-outline" size={18} color={t.primary} />
                 <AppText variant="body" style={styles.flex}>{formatWhen(r.fire_at) ?? 'Time pending'}{r.virtual ? ' · automatic' : ''}{isPending(r) ? ' · syncing' : ''}</AppText>
                 {isPending(r) ? null : <IconButton icon="close" label="Remove reminder" size={36} onPress={() => run(actions.removeReminder(r.id))} />}
               </View>
@@ -113,9 +115,9 @@ export default function Item() {
                 const s = changeSummary({ type: c.type, before: c.before, after: c.after });
                 return (
                   <View key={c.id} style={styles.history}>
-                    <AppText variant="labelSm" color={colors.accentSoft}>{c.event?.title ?? 'Event'} · {s.label}</AppText>
+                    <AppText variant="labelSm" color={t.primary}>{c.event?.title ?? 'Event'} · {s.label}</AppText>
                     {s.from || s.to ? <AppText variant="body">{[s.from, s.to].filter(Boolean).join('  →  ')}</AppText> : null}
-                    <AppText variant="caption" color={colors.onSurfaceMuted}>{relativeTime(c.at, now)}</AppText>
+                    <AppText variant="caption" color={t.textSecondary}>{relativeTime(c.at, now)}</AppText>
                   </View>
                 );
               })}
@@ -132,7 +134,7 @@ export default function Item() {
 
       {toast ? (
         <View accessibilityLiveRegion="polite" style={[styles.toast, toast.bad && styles.toastBad]}>
-          <AppText variant="label" color={toast.bad ? '#FCA5A5' : colors.onSurface}>{toast.text}</AppText>
+          <AppText variant="label" color={toast.bad ? t.warning : t.textPrimary}>{toast.text}</AppText>
         </View>
       ) : null}
 
@@ -145,6 +147,7 @@ export default function Item() {
 }
 
 function RemindSheet({ visible, card, now, onClose, onBefore, onAt }: { visible: boolean; card: Card; now: Date; onClose(): void; onBefore(m: number): void; onAt(iso: string): void }) {
+  const styles = useStyles();
   const { presets } = offsetPresets(card, now);
   const [custom, setCustom] = useState(false);
   const [value, setValue] = useState<PickerValue>(() => defaultPickerTime(new Date()));
@@ -183,7 +186,7 @@ function SnoozeSheet({ visible, card, now, onClose, onPick }: { visible: boolean
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: space.sm, paddingBottom: space.md },
   scroll: { paddingBottom: space.xl * 2, gap: space.lg },
   cardWrap: { minHeight: 120 },
@@ -192,9 +195,9 @@ const styles = StyleSheet.create({
   section: { gap: space.sm },
   line: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 44 },
   flex: { flex: 1 },
-  history: { backgroundColor: solid.card, borderColor: solid.cardBorder, borderWidth: 1, borderRadius: radius.md, padding: space.md, gap: 4 },
+  history: { backgroundColor: t.surfaceRaised, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, padding: space.md, gap: 4 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   custom: { gap: space.md, paddingTop: space.sm },
-  toast: { position: 'absolute', left: 0, right: 0, bottom: space.lg, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md, backgroundColor: solid.block, borderWidth: 1, borderColor: colors.borderAccent },
-  toastBad: { backgroundColor: '#4A2330', borderColor: '#EF4444' },
-});
+  toast: { position: 'absolute', left: 0, right: 0, bottom: space.lg, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md, backgroundColor: t.primarySoft, borderWidth: 1, borderColor: t.primaryBorder },
+  toastBad: { backgroundColor: tint(t.warning, t.surfaceRaised, 0.14), borderColor: t.warning },
+}));

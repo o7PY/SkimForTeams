@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { View, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, space } from '@/constants/skim-theme';
+import { makeStyles, space } from '@/constants/theme';
 import { Atmosphere } from './atmosphere';
 
 /** Every screen: the atmospheric field behind, content inside the safe area with the 24px gutter. */
 export function Screen({ children, style, gutter = true }: { children: ReactNode; style?: ViewStyle; gutter?: boolean }) {
+  const styles = useStyles();
   return (
     <View style={styles.root}>
       <Atmosphere />
@@ -15,8 +16,8 @@ export function Screen({ children, style, gutter = true }: { children: ReactNode
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
+const useStyles = makeStyles((t) => ({
+  root: { flex: 1, backgroundColor: t.background },
   safe: { flex: 1 },
   gutter: { paddingHorizontal: space.gutter },
-});
+}));
