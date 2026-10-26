@@ -372,6 +372,14 @@ class Pipeline:
             fields["confidence"] = conf
         if review and relation == "changed":  # a doubtful reminder must not flag a good event
             fields["needs_review"] = True
+        elif relation == "changed" and conf == "high" and old.get("needs_review") and "needs_review" not in fields:
+            # P4-DIFF-014: a flag used to stay for good. An explicit, high-confidence change that was APPLIED (only staff can reach
+            # "high": students and files are capped lower) settles what the earlier doubtful message left open, so the flag goes and
+            # the event gets its automatic reminders and alerts back. A plain restatement, a doubtful change, a change that itself
+            # conflicts (a flag set just above) and anything from a file never clear it.
+            fields["needs_review"] = False
+            changes.append({"change_type": "needs_review", "old_values": {"needs_review": True}, "confidence": conf,
+                            "new_values": {"needs_review": False, "reason": "confirmed by an explicit change"}})
         return {"kind": "update", "event_id": old["id"], "fields": fields, "relation": relation, "changes": changes}
 
 

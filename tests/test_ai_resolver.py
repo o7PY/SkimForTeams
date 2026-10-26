@@ -3,7 +3,7 @@ generic one and the generic one is flagged; "same time and place" copy from the 
 from datetime import date, datetime, time, timezone
 
 from ai_fakes import extraction, item
-from ai_harness import Harness, IST
+from ai_harness import Harness, IST, ist as ist_dt
 from test_ai_pipeline import ABS, WD
 
 from skim.ai.resolver import candidates_for, identifiers, tokens
@@ -240,3 +240,114 @@ def test_change_language():
         assert c(yes), yes
     for no in ("Reminder: Quiz 1 is on Monday", "Quiz 1 is tomorrow, bring your ID", "Reminder: the lab is today at 2 PM", "", None):
         assert not c(no), no
+
+
+# ---------------------------------------------------------------- P4-DIFF-014: a flag used to stay for good
+C = "Reminder: Quiz 1 is on Tuesday"                       # conflicts with Monday 2 Nov: flags the event, changes nothing
+D = "Correction: Quiz 1 is moved to Thursday, 5 November, 10 AM"
+
+
+def _flag_script(**over):
+    return _script({C: extraction("event", [item("restate", "quiz", "Quiz 1", WD("tue", text="on Tuesday"))]),
+                    D: extraction("change", [item("reschedule", "quiz", "Quiz 1", ABS("2026-11-05", "10:00", text="Thursday, 5 November, 10 AM"), **over)]),
+                    "Reminder: Quiz 1 is on Monday": extraction("event", [item("restate", "quiz", "Quiz 1", WD("mon", text="on Monday"))])})
+
+
+async def _flagged(script):
+    """Quiz 1 created (Fri 30 Oct), moved to Mon 2 Nov, then a conflicting reminder flags it."""
+    h = await Harness(script).setup()
+    await h.post("2026-10-23 09:00", A)
+    await h.post("2026-10-24 09:00", B)
+    await h.post("2026-10-26 10:00", C)
+    await h.run()
+    e = await _quiz1(h)
+    assert e["needs_review"] is True and e["event_date"] == date(2026, 11, 2)
+    return h
+
+
+async def test_an_explicit_staff_change_clears_the_flag_and_says_why():
+    h = await _flagged(_flag_script())
+    await h.post("2026-10-27 09:00", D)
+    await h.run()
+    e = await _quiz1(h)
+    assert (e["event_date"], e["status"], e["needs_review"], e["confidence"]) == (date(2026, 11, 5), "rescheduled", False, "high")
+    ch = (await h.store.get_event(e["id"]))["changes"]
+    assert [c["change_type"] for c in ch] == ["created", "rescheduled", "needs_review", "rescheduled", "needs_review"]
+    assert ch[-1]["old_values"] == {"needs_review": True}
+    assert ch[-1]["new_values"] == {"needs_review": False, "reason": "confirmed by an explicit change"}
+
+
+async def test_an_explicit_cancellation_also_clears_the_flag():
+    h = await _flagged(_flag_script() | {"Correction: Quiz 1 is cancelled": extraction("change", [item("cancel", "quiz", "Quiz 1")])})
+    await h.post("2026-10-27 09:00", "Correction: Quiz 1 is cancelled")
+    await h.run()
+    e = await _quiz1(h)
+    assert e["status"] == "cancelled" and e["needs_review"] is False
+
+
+async def test_nothing_that_is_not_an_explicit_change_clears_the_flag():
+    # a plain restatement that agrees with the date
+    h = await _flagged(_flag_script())
+    await h.post("2026-10-27 09:00", "Reminder: Quiz 1 is on Monday")
+    await h.run()
+    assert (await _quiz1(h))["needs_review"] is True
+    # a change the model is only medium-confident about: applied, but the doubt stays
+    h = await _flagged(_flag_script(confidence="medium"))
+    await h.post("2026-10-27 09:00", D)
+    await h.run()
+    e = await _quiz1(h)
+    assert e["event_date"] == date(2026, 11, 5) and e["needs_review"] is True
+    # a student can never change an event, so never clear a flag either
+    h = await _flagged(_flag_script())
+    await h.post("2026-10-27 09:00", D, author="student")
+    await h.run()
+    e = await _quiz1(h)
+    assert e["event_date"] == date(2026, 11, 2) and e["needs_review"] is True
+
+
+async def test_a_change_message_without_change_language_is_flagged_not_applied_and_clears_nothing():
+    """The caution that created the problem is unchanged: 'Quiz 1 will be on Thursday' is not a move."""
+    quiet = "Quiz 1 will be on Thursday, 5 November, 10 AM"
+    h = await _flagged(_flag_script() | {quiet: extraction("change", [item("reschedule", "quiz", "Quiz 1", ABS("2026-11-05", "10:00", text="Thursday, 5 November"))])})
+    await h.post("2026-10-27 09:00", quiet)
+    await h.run()
+    e = await _quiz1(h)
+    assert e["event_date"] == date(2026, 11, 2) and e["needs_review"] is True
+
+
+async def test_an_unflagged_event_gets_no_extra_history_when_it_changes():
+    h = await Harness(_flag_script()).setup()
+    await h.post("2026-10-23 09:00", A)
+    await h.post("2026-10-24 09:00", B)
+    await h.post("2026-10-27 09:00", D)
+    await h.run()
+    assert await h.changes((await _quiz1(h))["id"]) == ["created", "rescheduled", "rescheduled"]
+
+
+async def test_a_low_confidence_event_becomes_confirmed_by_an_explicit_staff_change():
+    h = await Harness({A: extraction("event", [item("create", "quiz", "Quiz 1", ABS("2026-10-30", "10:00", text="Friday, 30 October"), confidence="low")]),
+                       D: extraction("change", [item("reschedule", "quiz", "Quiz 1", ABS("2026-11-05", "10:00", text="Thursday, 5 November, 10 AM"))])}).setup()
+    await h.post("2026-10-23 09:00", A)
+    await h.run()
+    e = await _quiz1(h)
+    assert e["needs_review"] is True and e["confidence"] == "low"
+    await h.post("2026-10-27 09:00", D)
+    await h.run()
+    e = await _quiz1(h)
+    assert (e["needs_review"], e["confidence"], e["event_date"]) == (False, "high", date(2026, 11, 5))
+
+
+async def test_a_file_never_clears_a_flag():
+    """A schedule file states an explicit move, but files can be co-edited: their confidence is capped below 'high', so the event moves
+    (as before) and the doubt stays."""
+    text = "Schedule update: Quiz 1 moved to Thursday, 5 November, 10 AM"
+    h = await _flagged(_flag_script() | {text: extraction("change", [item("reschedule", "quiz", "Quiz 1", ABS("2026-11-05", "10:00", text="Thursday, 5 November, 10 AM"))])})
+    doc = {"id": 7, "team_id": "T1", "name": "Schedule.pdf", "path": "Schedule.pdf", "created_by_aad": "prof-aad", "created_by_name": "Prof. Menon",
+           "modified_by_aad": None, "modified_by_name": None, "created_at": ist_dt("2026-10-27 09:00"), "modified_at": ist_dt("2026-10-27 09:00"),
+           "installed_by_aad": "prof-aad"}
+    out = await h.pipeline.process_document_chunk(doc, {"chunk_index": 0, "text": text})
+    assert out.status == "ok"
+    e = await _quiz1(h)
+    assert e["event_date"] == date(2026, 11, 5)           # the file's move is applied, as it always was...
+    assert (e["needs_review"], e["confidence"]) == (True, "medium")   # ...but the doubt stays: a file's confidence is capped below "high"
+    assert await h.changes(e["id"]) == ["created", "rescheduled", "needs_review", "rescheduled"]   # no "confirmed" entry
