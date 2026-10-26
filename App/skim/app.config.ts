@@ -28,12 +28,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   web: { output: 'static', favicon: './assets/images/favicon.png' },
   plugins: [
     'expo-router',
-    ['expo-splash-screen', { backgroundColor: '#0F172A', image: './assets/images/splash-icon.png', imageWidth: 76 }],
+    ['expo-splash-screen', { backgroundColor: '#0F172A', image: './assets/images/splash-icon.png', imageWidth: 220 }],
     '@react-native-google-signin/google-signin', // Firebase flow: no options, the file above is used (library docs)
     'expo-secure-store',
     'expo-background-task',
     ['expo-calendar', { writeOnlyAccess: true }], // the system "new event" screen (P4-D-130); Android adds its calendar permissions
-    ['expo-notifications', { color: '#38BDF8', defaultChannel: 'changes' }],
+    ['expo-notifications', { icon: './assets/images/notification-icon.png', color: '#38BDF8', defaultChannel: 'changes' }],
   ],
   experiments: { typedRoutes: true, reactCompiler: true },
   extra: { eas: { projectId: '1990bc86-56ab-4f7a-a395-9c63b2e28fe0' } },
