@@ -11,6 +11,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'skim',
+  // Over-the-air updates (P5-D-111): JS-only changes ship with `eas update`; the runtime version is the app version, so an update only
+  // reaches builds of the same 1.0.x line. Anything native needs a new build (and a version bump).
+  runtimeVersion: { policy: 'appVersion' },
+  updates: { url: 'https://u.expo.dev/1990bc86-56ab-4f7a-a395-9c63b2e28fe0' },
   userInterfaceStyle: 'automatic', // light and dark both ship (P5-D-104); the app follows the phone's setting
   ios: { icon: './assets/expo.icon' }, // kept iOS-safe, never built in Phase 4 (P4-D-101)
   android: {
