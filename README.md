@@ -1,4 +1,4 @@
-# Skim · Phase 1: Retrieval & Visibility, Phase 2: Files tab + message history
+# Skim · Teams bot + AI + student app (Phases 1 to 4)
 
 A Teams bot that stores every message event (raw + normalised) in Postgres. Spec: `Bookkeeping/PHASE1.md`.
 Decision log, spec deviations and the plain-language overview live in `Bookkeeping/` (`DECISIONS.md`, `DIFF.md`, `ELI5.md`), which is git-ignored and kept locally.
@@ -163,6 +163,20 @@ duplicate events, or events from student messages.
 - [ ] `AI_ENABLED=false` → `run-all` works exactly like Phase 2.
 - [ ] `job_runs.stats` has AI counts and no text or names anywhere in the logs.
 - [ ] Scheduler runs keep succeeding for a day; `/debug/ai-status` shows no pile-up of failures.
+
+## Phase 4: student app (`App/skim`) and its API (`/api/v1`)
+**Backend** (same service; off unless `API_ENABLED=true`): Supabase-signed-in students call `/api/v1/*` (`me`, `subscriptions`, `deck`, `items`, `history`, `starred`, `reminders`, `devices`, `sync`); `run-all` also runs `feed-build`, `push-alerts` and `push-receipts`. Every `public` table has row level security on and the Supabase Data API is off: a new table must `enable row level security` (a test enforces it; `python scripts/check_rls.py` checks the database). Useful scripts: `scripts/feed_build.py --backfill`, `scripts/smoke_api.py --base <url>`, `scripts/acceptance_evidence.py`.
+
+**App** (Expo SDK 58, TypeScript, Android; not built in CI):
+```
+cd App/skim
+cp .env.example .env              # 4 public EXPO_PUBLIC_* values
+npm install
+npx expo start --dev-client --clear   # needs a development build installed on the phone
+npx tsc --noEmit && npx jest && CI=1 npx expo lint
+EAS_NO_VCS=1 eas build --profile development --platform android   # EAS_NO_VCS=1 is required: this folder lives inside the backend repo
+```
+Never committed (git-ignored): `google-services.json` (EAS supplies it as the secret file variable `GOOGLE_SERVICES_JSON`), `firebase-service-account.json`, `.env*`, keystores. Design notes: the app uses solid surfaces only; all times are India time.
 
 ## Manual acceptance checklist (real test tenant)
 - [ ] Adding the bot to a team posts the welcome + pairing code exactly once (even if Teams sends both installationUpdate and conversationUpdate); a `teams` row has that code. Remove + re-add welcomes again.
