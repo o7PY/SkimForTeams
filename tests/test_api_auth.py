@@ -9,7 +9,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from skim.api import user_settings
-from skim.api.auth import JWKS_TTL, REFETCH_COOLDOWN, AuthError, TokenVerifier
+from skim.api.auth import FAILURE_BACKOFF, JWKS_TTL, MAX_STALE, REFETCH_COOLDOWN, AuthError, TokenVerifier
 from skim.app import create_app
 from skim.config import ConfigError, Settings
 from skim.storage.memory import MemoryStorage
@@ -143,12 +143,63 @@ async def test_jwks_outage_uses_cached_keys_but_without_a_cache_is_503():
     jwks.fail = True
     with pytest.raises(AuthError) as e:
         await v.verify(k.token())
-    assert e.value.status == 503
+    assert e.value.status == 503 and jwks.calls == 1
+    with pytest.raises(AuthError):                         # inside the backoff there is no second network attempt
+        await v.verify(k.token())
+    assert jwks.calls == 1
     jwks.fail = False
+    clock.t += FAILURE_BACKOFF + 1
     await v.verify(k.token())
     jwks.fail = True
     clock.t += JWKS_TTL + 1
     assert (await v.verify(k.token()))["sub"] == UID      # stale keys beat locking everyone out
+
+
+async def test_a_failed_refresh_backs_off_instead_of_refetching_on_every_request():
+    k, clock = Keys(), Clock()
+    jwks = Jwks(k)
+    v = verifier(jwks, clock)
+    await v.verify(k.token())
+    jwks.fail = True
+    clock.t += JWKS_TTL + 1
+    for _ in range(10):
+        await v.verify(k.token())                          # served from the stale cache
+    assert jwks.calls == 2                                 # one failed attempt, then none
+    clock.t += FAILURE_BACKOFF + 1
+    await v.verify(k.token())
+    assert jwks.calls == 3                                 # after the backoff, one more try
+
+
+async def test_stale_keys_are_not_trusted_forever():
+    k, clock = Keys(), Clock()
+    jwks = Jwks(k)
+    v = verifier(jwks, clock)
+    await v.verify(k.token())
+    jwks.fail = True
+    clock.t += MAX_STALE - 1
+    assert (await v.verify(k.token()))["sub"] == UID
+    clock.t += 2
+    with pytest.raises(AuthError) as e:
+        await v.verify(k.token())                          # fails closed once the cache is older than MAX_STALE
+    assert e.value.status == 503
+
+
+async def test_an_empty_or_garbled_key_set_never_replaces_good_keys():
+    k, clock = Keys(), Clock()
+    jwks = Jwks(k)
+    v = verifier(jwks, clock)
+    await v.verify(k.token())
+    jwks.keys = []
+    clock.t += JWKS_TTL + 1
+    assert (await v.verify(k.token()))["sub"] == UID
+    assert list(v._keys) == [k.kid]
+
+
+async def test_an_unknown_kid_on_a_cold_cache_fetches_once():
+    jwks = Jwks(Keys("a"))
+    with pytest.raises(AuthError):
+        await verifier(jwks).verify(Keys("zzz").token())
+    assert jwks.calls == 1
 
 
 async def test_hs256_fallback_only_when_the_token_says_hs256_and_a_secret_exists():

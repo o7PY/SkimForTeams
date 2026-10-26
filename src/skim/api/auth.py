@@ -16,6 +16,8 @@ log = logging.getLogger("skim.api.auth")
 ASYMMETRIC = {"ES256", "RS256", "EdDSA"}
 JWKS_TTL = 600.0       # P4 spec 6.1: cached for 10 minutes
 REFETCH_COOLDOWN = 30.0  # an unknown kid refetches once, but not on every bad token (no refetch storms)
+FAILURE_BACKOFF = 30.0   # after a failed fetch nobody retries for this long (requests fail fast or use the cached keys)
+MAX_STALE = 24 * 3600.0  # cached keys older than this are not trusted when Supabase cannot be reached: fail closed (503)
 LEEWAY = 10
 
 
@@ -46,16 +48,21 @@ class TokenVerifier:
         self._keys: dict[str, jwt.PyJWK] = {}
         self._fetched_at: float | None = None
         self._forced_at: float | None = None
+        self._retry_after: float = 0.0
         self._lock = asyncio.Lock()
 
     async def _refresh(self) -> None:
+        now = self._clock()
+        if now < self._retry_after:  # a fetch just failed: do not hit the network again yet
+            self._check_usable(now, "jwks unavailable (backing off)")
+            return
         try:
             doc = await self._fetch(self.jwks_url)
         except Exception as e:  # network, HTTP status, bad JSON
-            if self._keys:
-                log.warning("JWKS refresh failed (%s); keeping the cached keys", type(e).__name__)
-                return
-            raise AuthError(f"jwks unavailable: {type(e).__name__}", status=503) from e
+            self._retry_after = now + FAILURE_BACKOFF
+            log.warning("JWKS refresh failed (%s); backing off %ds", type(e).__name__, FAILURE_BACKOFF)
+            self._check_usable(now, f"jwks unavailable: {type(e).__name__}")
+            return
         keys: dict[str, jwt.PyJWK] = {}
         for jwk in doc.get("keys", []) if isinstance(doc, dict) else []:
             try:
@@ -63,14 +70,26 @@ class TokenVerifier:
                     keys[jwk["kid"]] = jwt.PyJWK(jwk)
             except Exception:  # an unusable key must not break the others
                 log.warning("ignoring an unusable JWKS key")
+        if not keys:  # an empty/garbled key set must never replace good keys (it would lock every student out)
+            self._retry_after = now + FAILURE_BACKOFF
+            log.warning("JWKS had no usable keys; backing off %ds", FAILURE_BACKOFF)
+            self._check_usable(now, "jwks had no usable keys")
+            return
         self._keys, self._fetched_at = keys, self._clock()
+
+    def _check_usable(self, now: float, reason: str) -> None:
+        """After a failed (or skipped) refresh: cached keys keep working for at most MAX_STALE, else 503 (fail closed)."""
+        if not self._keys or self._fetched_at is None or now - self._fetched_at >= MAX_STALE:
+            raise AuthError(reason, status=503)
 
     async def _key_for(self, kid: str) -> jwt.PyJWK:
         async with self._lock:
             now = self._clock()
+            refreshed = False
             if self._fetched_at is None or now - self._fetched_at >= JWKS_TTL:
                 await self._refresh()
-            if kid not in self._keys and (self._forced_at is None or now - self._forced_at >= REFETCH_COOLDOWN):
+                refreshed = True
+            if kid not in self._keys and not refreshed and (self._forced_at is None or now - self._forced_at >= REFETCH_COOLDOWN):
                 self._forced_at = now
                 await self._refresh()
             key = self._keys.get(kid)
