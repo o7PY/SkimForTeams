@@ -10,3 +10,14 @@ __pycache__/
 appPackage.zip
 .serena/
 .claude/
+
+# Phase 4 app: never commit keys or build output
+App/skim/firebase-service-account.json
+App/skim/google-services.json
+google-services.json
+*service-account*.json
+App/**/node_modules/
+App/**/.expo/
+App/**/dist/
+*.keystore
+*.jks
