@@ -595,3 +595,47 @@ async def test_a_star_on_a_card_keeps_working_for_the_card_in_the_deck(api):
     await api.call("PUT", f"/items/{i}/star", json={"temp": "3d"})
     [c] = (await api.deck())["cards"]
     assert c["user"]["starred"] is True
+
+
+async def test_deleted_messages_serve_no_content_anywhere(api):
+    s = api.store
+    await msg(s, "1000", text="secret exam answers", at=NOW - timedelta(hours=3), atts=[("a.pdf", "https://x/a.pdf")])
+    await msg(s, "2000", text="a reply", reply_to="1000", at=NOW - timedelta(hours=2))
+    await api.build()
+    root, reply = await card_for(api, "1000"), await card_for(api, "2000")
+    await api.join()
+    await api.call("PUT", f"/items/{root}/star", json={"temp": None})
+    await api.call("POST", f"/items/{root}/state", json={"action": "dismiss"})
+    await _delete_message(s, "1000")
+    await s.set_feed_item_hidden(root, True)                                           # what feed-build's sync does
+    for path in (f"/items/{root}",):
+        c = (await api.call("GET", path))[1]
+        assert c["message"]["deleted"] is True and c["message"]["text"] == "" and c["message"]["subject"] is None
+        assert c["message"]["attachments"] == [] and c["links"]["teams_deep_link"] is None
+    for listing in ("/history", "/starred"):
+        [c] = (await api.call("GET", listing))[1]["cards"]
+        assert c["message"]["deleted"] is True and "secret" not in str(c) and c["message"]["attachments"] == []
+    r = (await api.call("GET", f"/items/{reply}"))[1]
+    assert r["message"]["reply_to_subject"] is None and "secret" not in str(r)         # not quoted through the reply either
+
+
+async def test_a_hidden_card_nobody_interacted_with_is_a_404(api):
+    s = api.store
+    await msg(s, "m1")
+    await msg(s, "m2")
+    await api.build()
+    a, b = await card_for(api, "m1"), await card_for(api, "m2")
+    await api.join()
+    await api.call("POST", f"/items/{b}/state", json={"action": "dismiss"})
+    for i in (a, b):
+        await s.set_feed_item_hidden(i, True)
+    for method, path, body in (("GET", f"/items/{a}", None), ("POST", f"/items/{a}/state", {"action": "dismiss"}),
+                               ("PUT", f"/items/{a}/star", {"temp": None})):
+        assert (await api.call(method, path, **({"json": body} if body else {})))[0] == 404, path
+    assert (await api.call("GET", f"/items/{b}"))[0] == 200                           # the user holds it (it is in their history)
+
+
+async def _delete_message(s, mid):
+    from skim.normalize import MessageEvent
+    from test_feed_build import raw
+    await s.apply_message_event(MessageEvent(conversation_id=CONV, message_id=mid, event="deleted", at=NOW), await raw(s, "del-" + mid))

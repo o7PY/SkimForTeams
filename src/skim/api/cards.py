@@ -159,17 +159,20 @@ def build_card(ld: Loaded, item_id: int, *, now: datetime, staff_ids: frozenset[
     if it["kind"] == "message":
         key = (it["conversation_id"], it["message_id"])
         m = ld.messages.get(key) or {}
-        text, truncated = _preview(m.get("text"), detail)
+        gone = m.get("deleted_at") is not None or bool(it["hidden"])   # deleted in Teams: nothing of its content is served
+        text, truncated = ("", False) if gone else _preview(m.get("text"), detail)
         parent = ld.messages.get((key[0], m["reply_to_id"])) if m.get("reply_to_id") else None
+        if parent is not None and parent.get("deleted_at") is not None:
+            parent = None                                                # ... nor quoted through a reply
         reply_subject = (parent.get("subject") or (parent.get("text") or "")[:60]) if parent else None
         card["author"] = _author(m, author_role(m.get("from_aad_id"), team.get("installed_by_aad"), staff_ids), m.get("from_name"))
         card["message"] = {
-            "subject": m.get("subject"), "text": text, "text_truncated": truncated,
+            "subject": None if gone else m.get("subject"), "text": text, "text_truncated": truncated,
             "edited": bool(m.get("last_edited_at")) or (m.get("current_version") or 1) > 1,
-            "deleted": m.get("deleted_at") is not None or bool(it["hidden"]), "reply_to_subject": reply_subject or None,
-            "attachments": [{"name": f["name"] or f.get("document_name"), "document_id": f["document_id"],
-                             "web_url": f["document_url"] or f["content_url"]} for f in ld.files.get(key, [])]}
-        card["links"]["teams_deep_link"] = deep_link(*key)
+            "deleted": gone, "reply_to_subject": reply_subject or None,
+            "attachments": [] if gone else [{"name": f["name"] or f.get("document_name"), "document_id": f["document_id"],
+                                            "web_url": f["document_url"] or f["content_url"]} for f in ld.files.get(key, [])]}
+        card["links"]["teams_deep_link"] = None if gone else deep_link(*key)
     elif it["kind"] == "document":
         d = ld.doc_cards.get(it["document_event_id"]) or {}
         who = document_actor(d) if d else None

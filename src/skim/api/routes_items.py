@@ -48,8 +48,13 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
         raw = request.match_info["id"]
         if not raw.isdigit() or int(raw) > 2**62:
             return None
-        iid = int(raw)
-        return iid if iid in await storage.accessible_item_ids(request[user_key]["id"], [iid]) else None
+        iid, uid = int(raw), request[user_key]["id"]
+        if iid not in await storage.accessible_item_ids(uid, [iid]):
+            return None
+        if (await storage.get_feed_items([iid]))[iid]["hidden"]:  # a deleted message / folded duplicate: only for those who already hold it
+            if not await storage.get_item_states(uid, [iid]) and not await storage.get_stars(uid, [iid]):
+                return None
+        return iid
 
     async def render(uid: str, ids: list[int], folded: dict[int, list[int]], detail: bool = False) -> list[dict]:
         """Cards for ids (in that order); folded originals are loaded too and nested under their card."""
