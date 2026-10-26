@@ -272,3 +272,123 @@ class MemoryAppMixin:
 
     async def list_push(self, user_id: str | None = None) -> list[dict]:
         return [dict(p) for p in self.push_outbox if user_id is None or p["user_id"] == user_id]
+
+
+class MemoryFeedMixin:
+    """feed-build candidates for MemoryStorage (twin of PostgresFeedMixin; keep the two in step)."""
+
+    def _team_live(self, team_id) -> dict | None:
+        t = self.teams.get(team_id)
+        return t if t is not None and t.get("removed_at") is None else None
+
+    def _standard_channel(self, channel_id) -> bool:
+        ch = self.channels.get(channel_id)
+        return (ch.get("membership_type") if ch else None) in (None, "standard")
+
+    def _has_item(self, kind: str, **match) -> bool:
+        return any(f["kind"] == kind and all(f.get(k) == v for k, v in match.items()) for f in self.feed_items.values())
+
+    async def feed_candidate_messages(self, since: datetime | None, limit: int) -> list[dict]:
+        out = []
+        for (cid, mid), m in self.messages.items():
+            conv = self.conversations.get(cid) or {}
+            team = self._team_live(conv.get("team_id"))
+            when = m.get("created_at") or m.get("last_edited_at")
+            if (team is None or conv.get("conversation_type") != "channel" or m.get("deleted_at") is not None
+                    or not self._standard_channel(cid) or when is None or (since is not None and when < since)):
+                continue
+            has_att = any(a["conversation_id"] == cid and a["message_id"] == mid for a in self.attachments)
+            if not (m.get("text") or m.get("subject") or has_att) or self._has_item("message", conversation_id=cid, message_id=mid):
+                continue
+            ok = [a for k, a in self.analyses.items()
+                  if k[0] == cid and k[1] == mid and k[2] == m["current_version"] and a["status"] == "ok"]
+            ok.sort(key=lambda a: a["processed_at"])
+            out.append({"conversation_id": cid, "message_id": mid, "from_aad_id": m.get("from_aad_id"),
+                        "created_at": m.get("created_at"), "last_edited_at": m.get("last_edited_at"),
+                        "team_id": conv["team_id"], "installed_by_aad": team.get("installed_by_aad"),
+                        "category": ok[-1]["category"] if ok else None,
+                        "event_ids": sorted(l["event_id"] for k, l in self.message_event_links.items() if k[:2] == (cid, mid)),
+                        "_when": when})
+        out.sort(key=lambda r: (r["_when"], r["message_id"]))
+        return [{k: v for k, v in r.items() if k != "_when"} for r in out[:limit]]
+
+    def _message_card_visible(self, cid: str, mid: str) -> bool:
+        return any(f["kind"] == "message" and (f["conversation_id"], f["message_id"]) == (cid, mid) and not f["hidden"]
+                   for f in self.feed_items.values())
+
+    def _doc_covered_by_message(self, document_id: int) -> bool:
+        by_id = {a["id"]: a for a in self.attachments}
+        return any(d == document_id and a_id in by_id
+                   and self._message_card_visible(by_id[a_id]["conversation_id"], by_id[a_id]["message_id"])
+                   for a_id, d, _ in self.links)
+
+    async def feed_candidate_doc_events(self, since: datetime | None, limit: int) -> list[dict]:
+        out = []
+        for de in self.document_events:
+            d = self.documents.get(de["document_id"])
+            team = self._team_live(d.get("team_id")) if d else None
+            if (d is None or team is None or d.get("is_folder") or not self._standard_channel(d.get("channel_id"))
+                    or (since is not None and de["at"] < since) or self._has_item("document", document_event_id=de["id"])):
+                continue
+            modified_ids = {e["id"] for e in self.document_events
+                            if e["document_id"] == de["document_id"] and e["event"] == "modified"}
+            times = sorted(f["occurred_at"] for f in self.feed_items.values()
+                           if f["kind"] == "document" and f["document_event_id"] in modified_ids)
+            out.append({"document_event_id": de["id"], "document_id": de["document_id"], "event": de["event"], "at": de["at"],
+                        "team_id": d["team_id"], "created_by_aad": d.get("created_by_aad"),
+                        "modified_by_aad": d.get("modified_by_aad"), "modified_by_name": d.get("modified_by_name"),
+                        "installed_by_aad": team.get("installed_by_aad"),
+                        "covered_by_message": self._doc_covered_by_message(de["document_id"]),
+                        "modified_card_times": times})
+        out.sort(key=lambda r: (r["at"], r["document_event_id"]))
+        return out[:limit]
+
+    async def feed_candidate_changes(self, since: datetime | None, limit: int, types: tuple[str, ...]) -> list[dict]:
+        out = []
+        for ec in self.event_changes:
+            e = self.events.get(ec["event_id"])
+            if (e is None or self._team_live(e["team_id"]) is None or ec["change_type"] not in types
+                    or (since is not None and ec["at"] < since) or self._has_item("change", event_change_id=ec["id"])):
+                continue
+            out.append({"event_change_id": ec["id"], "event_id": ec["event_id"], "change_type": ec["change_type"],
+                        "at": ec["at"], "team_id": e["team_id"]})
+        out.sort(key=lambda r: (r["at"], r["event_change_id"]))
+        return out[:limit]
+
+    async def sync_feed_hidden(self) -> int:
+        n = 0
+        for f in self.feed_items.values():
+            m = self.messages.get((f["conversation_id"], f["message_id"])) if f["kind"] == "message" else None
+            if m is not None and f["hidden"] != (m.get("deleted_at") is not None):
+                f["hidden"] = m.get("deleted_at") is not None
+                n += 1
+        return n
+
+    async def hide_duplicate_document_cards(self) -> int:
+        n = 0
+        for f in self.feed_items.values():
+            if f["kind"] != "document" or f["hidden"]:
+                continue
+            de = next(e for e in self.document_events if e["id"] == f["document_event_id"])
+            if de["event"] == "created" and self._doc_covered_by_message(de["document_id"]):
+                f["hidden"] = True
+                n += 1
+        return n
+
+    async def link_feed_items_to_events(self) -> int:
+        want: set[tuple[int, int]] = set()
+        for iid, f in self.feed_items.items():
+            if f["kind"] == "message":
+                want |= {(iid, l["event_id"]) for k, l in self.message_event_links.items()
+                         if k[:2] == (f["conversation_id"], f["message_id"])}
+            elif f["kind"] == "change":
+                ec = next((c for c in self.event_changes if c["id"] == f["event_change_id"]), None)
+                if ec:
+                    want.add((iid, ec["event_id"]))
+            else:
+                de = next(e for e in self.document_events if e["id"] == f["document_event_id"])
+                want |= {(iid, eid) for eid, e in self.events.items() if e.get("source_kind") == "document"
+                         and str((e.get("source_ref") or {}).get("document_id")) == str(de["document_id"])}
+        new = want - self.feed_item_events
+        self.feed_item_events |= new
+        return len(new)

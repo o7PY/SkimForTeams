@@ -15,6 +15,7 @@ from ..graph.client import GraphClient, GraphError
 from ..storage.base import Storage
 from .common import Budget, JobContext
 from .ai_documents import ai_documents
+from .feed_build import feed_build
 from .ai_embed import ai_embed
 from .ai_process import ai_process
 from .enrich import enrich_team
@@ -197,8 +198,14 @@ async def step_ai_all(ctx: JobContext, team_id: str | None) -> str:
     return "partial" if "partial" in results else "ok"
 
 
+async def step_feed_build(ctx: JobContext, team_id: str | None) -> str:
+    """P4-D-127: student-app cards. Runs after the AI steps; needs no AI (it works with AI off) and no Graph calls."""
+    ids = {t["id"] for t in select_teams(await ctx.storage.list_sync_teams(), team_id)} if team_id else None
+    return await feed_build(ctx, team_id, ids)
+
+
 AI_STEPS: list[Step] = [step_ai_process, step_ai_documents, step_ai_embed]
-EXTRA_RUN_ALL_STEPS: list[Step] = [step_fix_text, step_backfill_initial, step_enrich_messages, step_refill_empty, step_link_attachments, step_ai_all]
+EXTRA_RUN_ALL_STEPS: list[Step] = [step_fix_text, step_backfill_initial, step_enrich_messages, step_refill_empty, step_link_attachments, step_ai_all, step_feed_build]
 STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_files, "backfill": step_backfill,
                           "fix-text": step_fix_text,
                           "enrich-messages": step_enrich_messages,
@@ -206,17 +213,19 @@ STEPS: dict[str, Step] = {"discover": step_discover, "sync-files": step_sync_fil
                           "link-attachments": step_link_attachments, "ai-process": step_ai_process,
                           "ai-documents": step_ai_documents,
                           "ai-embed": step_ai_embed,
-                          "ai-reprocess": step_ai_reprocess, "run-all": step_run_all}
+                          "ai-reprocess": step_ai_reprocess, "feed-build": step_feed_build, "run-all": step_run_all}
 
 
 # ---------------------------------------------------------------------------- runner
 class JobRunner:
     def __init__(self, storage: Storage, graph: GraphClient, budget_seconds: float,
                  clock: Callable[[], float] = time.monotonic, backfill_since_days: int = 180,
-                 backfill_max_messages: int = 2000, ai=None):
+                 backfill_max_messages: int = 2000, ai=None, staff_aad_ids: frozenset[str] = frozenset(),
+                 feed_lookback_days: int = 30):
         self.storage, self.graph, self.budget_seconds, self._clock = storage, graph, budget_seconds, clock
         self.backfill_since_days, self.backfill_max_messages = backfill_since_days, backfill_max_messages
         self.ai = ai
+        self.staff_aad_ids, self.feed_lookback_days = frozenset(staff_aad_ids), feed_lookback_days
 
     async def run(self, job: str, team_id: str | None = None, since_days: int | None = None,
                   force: bool = False, prompt_version: str | None = None) -> dict:
@@ -252,7 +261,8 @@ class JobRunner:
             ctx = JobContext(self.storage, self.graph, Budget(self.budget_seconds, self._clock),
                              options={"since_days": since_days or self.backfill_since_days,
                                       "max_messages": self.backfill_max_messages, "force": force,
-                                      "prompt_version": prompt_version}, ai=self.ai)
+                                      "prompt_version": prompt_version, "staff_aad_ids": self.staff_aad_ids,
+                                      "feed_lookback_days": self.feed_lookback_days}, ai=self.ai)
             before = dict(self.graph.stats)
             error: str | None = None
             error_class: str | None = None

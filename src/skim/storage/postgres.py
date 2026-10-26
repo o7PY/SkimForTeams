@@ -14,7 +14,7 @@ from ..normalize import MessageEvent, to_plain_text
 from ..normalize_graph import fill_empty, missing_attachments
 from ..textclean import clean_json
 from .ai_postgres import PostgresAIMixin
-from .app_postgres import PostgresAppMixin
+from .app_postgres import PostgresAppMixin, PostgresFeedMixin
 from .cleanpool import CleanPool
 
 log = logging.getLogger("skim.storage")
@@ -33,7 +33,7 @@ def pool_kwargs(dsn: str) -> dict:
     return kw
 
 
-class PostgresStorage(PostgresAIMixin, PostgresAppMixin):
+class PostgresStorage(PostgresAIMixin, PostgresAppMixin, PostgresFeedMixin):
     def __init__(self, dsn: str) -> None:
         self.dsn = dsn
         self.pool: asyncpg.Pool | None = None

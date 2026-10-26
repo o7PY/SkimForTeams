@@ -283,3 +283,111 @@ class PostgresAppMixin:
         assert self.pool
         rows = await self.pool.fetch("select * from push_outbox where ($1::uuid is null or user_id=$1) order by id", user_id)
         return [_d(r) for r in rows]
+
+
+# --- feed-build candidates (P4-D-108): rows past the anti-join, rules applied in skim/feed.py ---
+_MESSAGE_CANDIDATES = """
+select m.conversation_id, m.message_id, m.from_aad_id, m.created_at, m.last_edited_at, c.team_id, t.installed_by_aad,
+  (select a.category from message_analysis a where a.conversation_id = m.conversation_id and a.message_id = m.message_id
+     and a.message_version = m.current_version and a.status = 'ok' order by a.processed_at desc limit 1) as category,
+  coalesce((select array_agg(l.event_id order by l.event_id) from message_event_links l
+     where l.conversation_id = m.conversation_id and l.message_id = m.message_id), '{}') as event_ids
+from messages m
+join conversations c on c.id = m.conversation_id and c.team_id is not null and c.conversation_type = 'channel'
+join teams t on t.id = c.team_id and t.removed_at is null
+left join channels ch on ch.id = m.conversation_id
+where m.deleted_at is null and coalesce(ch.membership_type, 'standard') = 'standard'
+  and coalesce(m.created_at, m.last_edited_at) is not null
+  and ($1::timestamptz is null or coalesce(m.created_at, m.last_edited_at) >= $1)
+  and (coalesce(m.text, '') <> '' or coalesce(m.subject, '') <> ''
+       or exists (select 1 from attachments x where x.conversation_id = m.conversation_id and x.message_id = m.message_id))
+  and not exists (select 1 from feed_items f where f.kind = 'message' and f.conversation_id = m.conversation_id
+                  and f.message_id = m.message_id)
+order by coalesce(m.created_at, m.last_edited_at), m.message_id
+limit $2"""
+
+_DOC_EVENT_CANDIDATES = """
+select de.id as document_event_id, de.document_id, de.event, de.at, d.team_id, d.created_by_aad, d.modified_by_aad,
+  d.modified_by_name, t.installed_by_aad,
+  exists (select 1 from attachment_document_links adl
+            join attachments a on a.id = adl.attachment_id
+            join feed_items f on f.kind = 'message' and f.conversation_id = a.conversation_id
+                             and f.message_id = a.message_id and not f.hidden
+          where adl.document_id = d.id) as covered_by_message,
+  coalesce((select array_agg(f2.occurred_at order by f2.occurred_at) from feed_items f2
+            join document_events de2 on de2.id = f2.document_event_id
+            where f2.kind = 'document' and de2.document_id = d.id and de2.event = 'modified'), '{}') as modified_card_times
+from document_events de
+join documents d on d.id = de.document_id and not d.is_folder and d.team_id is not null
+join teams t on t.id = d.team_id and t.removed_at is null
+left join channels ch on ch.id = d.channel_id
+where coalesce(ch.membership_type, 'standard') = 'standard'
+  and ($1::timestamptz is null or de.at >= $1)
+  and not exists (select 1 from feed_items f where f.kind = 'document' and f.document_event_id = de.id)
+order by de.at, de.id
+limit $2"""
+
+_CHANGE_CANDIDATES = """
+select ec.id as event_change_id, ec.event_id, ec.change_type, ec.at, e.team_id
+from event_changes ec
+join events e on e.id = ec.event_id
+join teams t on t.id = e.team_id and t.removed_at is null
+where ec.change_type = any($3::text[]) and ($1::timestamptz is null or ec.at >= $1)
+  and not exists (select 1 from feed_items f where f.kind = 'change' and f.event_change_id = ec.id)
+order by ec.at, ec.id
+limit $2"""
+
+
+def _count(tag: str) -> int:
+    return int(tag.split()[-1])
+
+
+class PostgresFeedMixin:
+    async def feed_candidate_messages(self, since: datetime | None, limit: int) -> list[dict]:
+        assert self.pool
+        return [dict(r) for r in await self.pool.fetch(_MESSAGE_CANDIDATES, since, limit)]
+
+    async def feed_candidate_doc_events(self, since: datetime | None, limit: int) -> list[dict]:
+        assert self.pool
+        return [dict(r) for r in await self.pool.fetch(_DOC_EVENT_CANDIDATES, since, limit)]
+
+    async def feed_candidate_changes(self, since: datetime | None, limit: int, types: tuple[str, ...]) -> list[dict]:
+        assert self.pool
+        return [dict(r) for r in await self.pool.fetch(_CHANGE_CANDIDATES, since, limit, list(types))]
+
+    async def sync_feed_hidden(self) -> int:
+        """A message card is hidden exactly while its message is deleted in Teams (P4-D-128)."""
+        assert self.pool
+        return _count(await self.pool.execute(
+            """update feed_items f set hidden = (m.deleted_at is not null) from messages m
+               where f.kind = 'message' and m.conversation_id = f.conversation_id and m.message_id = f.message_id
+                 and f.hidden is distinct from (m.deleted_at is not null)"""))
+
+    async def hide_duplicate_document_cards(self) -> int:
+        """A file's own 'created' card is hidden once the message that posted it is a visible card (P4-D-109)."""
+        assert self.pool
+        return _count(await self.pool.execute(
+            """update feed_items f set hidden = true from document_events de
+               where f.kind = 'document' and not f.hidden and de.id = f.document_event_id and de.event = 'created'
+                 and exists (select 1 from attachment_document_links adl
+                               join attachments a on a.id = adl.attachment_id
+                               join feed_items mf on mf.kind = 'message' and mf.conversation_id = a.conversation_id
+                                                 and mf.message_id = a.message_id and not mf.hidden
+                             where adl.document_id = de.document_id)"""))
+
+    async def link_feed_items_to_events(self) -> int:
+        """Add any missing card -> event links (new analyses, and the rebuild after reset_ai_data). Only adds."""
+        assert self.pool
+        n = 0
+        for sql in (
+            """insert into feed_item_events (item_id, event_id) select f.id, l.event_id from feed_items f
+               join message_event_links l on l.conversation_id = f.conversation_id and l.message_id = f.message_id
+               where f.kind = 'message' on conflict do nothing""",
+            """insert into feed_item_events (item_id, event_id) select f.id, ec.event_id from feed_items f
+               join event_changes ec on ec.id = f.event_change_id where f.kind = 'change' on conflict do nothing""",
+            """insert into feed_item_events (item_id, event_id) select f.id, e.id from feed_items f
+               join document_events de on de.id = f.document_event_id
+               join events e on e.source_kind = 'document' and e.source_ref->>'document_id' = de.document_id::text
+               where f.kind = 'document' on conflict do nothing"""):
+            n += _count(await self.pool.execute(sql))
+        return n

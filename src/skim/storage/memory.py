@@ -9,10 +9,10 @@ from datetime import datetime, timezone
 from ..normalize import MessageEvent, has_markup, to_plain_text
 from ..normalize_graph import fill_empty, missing_attachments
 from .ai_memory import MemoryAIMixin
-from .app_memory import MemoryAppMixin
+from .app_memory import MemoryAppMixin, MemoryFeedMixin
 
 
-class MemoryStorage(MemoryAIMixin, MemoryAppMixin):
+class MemoryStorage(MemoryAIMixin, MemoryAppMixin, MemoryFeedMixin):
     def __init__(self) -> None:
         self._init_ai()
         self._init_app()

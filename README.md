@@ -62,6 +62,7 @@ Extra environment (all optional; without Graph credentials or `JOBS_TOKEN` the `
 | `API_ENABLED` | false | Student app API under `/api/v1` (Phase 4); needs `SUPABASE_URL`, else the paths are plain 404s |
 | `SUPABASE_URL` | unset | `https://<ref>.supabase.co`; access tokens are verified against its JWKS |
 | `SUPABASE_JWT_SECRET` | unset | Legacy HS256 secret, used only for tokens that say HS256 (use Secret Manager) |
+| `FEED_LOOKBACK_DAYS` | 30 | How far back the `feed-build` step (student-app cards, inside `run-all`) looks; `python scripts/feed_build.py --backfill` has no limit |
 
 Graph needs the bot's app registration to have the application roles `Channel.ReadBasic.All`, `Files.Read.All`,
 `Group.Selected`, `Team.ReadBasic.All` (admin consent), and the team to be granted via RSC.

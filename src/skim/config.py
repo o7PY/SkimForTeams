@@ -40,6 +40,8 @@ class Settings:
     api_enabled: bool = False
     supabase_url: str | None = None
     supabase_jwt_secret: str | None = field(default=None, repr=False)  # legacy HS256 fallback only
+    staff_aad_ids: frozenset[str] = frozenset()   # STAFF_AAD_IDS, shared with Phase 3 (P4-D-135)
+    feed_lookback_days: int = 30
     # Passed to the SDK's MsalConnectionManager / AgentApplication.
     sdk_config: dict = field(default_factory=dict, repr=False)
 
@@ -88,6 +90,7 @@ class Settings:
         supabase_url = (env.get("SUPABASE_URL") or "").strip().rstrip("/") or None
         if api_enabled and not (supabase_url and supabase_url.startswith("https://")):
             problems.append("SUPABASE_URL (https://<ref>.supabase.co) is required when API_ENABLED=true")
+        feed_lookback = num("FEED_LOOKBACK_DAYS", 30, int, 1)
         creds = tuple(env.get(_PREFIX + k, "") for k in ("CLIENTID", "CLIENTSECRET", "TENANTID"))
         graph_credentials = creds if all(creds) and not anonymous else None
         if problems:
@@ -117,6 +120,8 @@ class Settings:
             job_time_budget_seconds=budget,
             backfill_since_days=since_days,
             backfill_max_messages_per_channel=max_msgs,
+            staff_aad_ids=frozenset(x.strip() for x in (env.get("STAFF_AAD_IDS") or "").split(",") if x.strip()),
+            feed_lookback_days=feed_lookback,
             api_enabled=api_enabled,
             supabase_url=supabase_url,
             supabase_jwt_secret=env.get("SUPABASE_JWT_SECRET") or None,
