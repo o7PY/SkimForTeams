@@ -1,5 +1,5 @@
 id,question,anchor_text,expected_source,expected_fact,forbid,expect_refusal,notes
-1,When is the midsem?,,Midsem,9 Nov;2:00|14:00,,n,Event fact: Mon 9 Nov 14:00
+1,When is the midsem?,,Midsem,9 Nov;2:00|14:00;MA 221,,n,Event fact: Mon 9 Nov 14:00; the answer names the course
 2,Where is the midsem being held?,,Midsem,LHC 201,Main Exam Hall,n,Venue changed (msg 35); the old venue must not be given as current
 3,Has the midsem venue changed?,,Midsem venue change,LHC 201|moved|changed,,n,
 4,Is the midsem open book?,,closed book,closed book|one A4|A4,,n,Answer is only in a free-text announcement (msg 33): retrieval, not events
@@ -16,6 +16,6 @@ id,question,anchor_text,expected_source,expected_fact,forbid,expect_refusal,note
 15,Has this changed?,Midsem venue change,Midsem,LHC 201,,n,Anchored to the venue-change card
 16,What is the airspeed velocity of an unladen swallow?,,,,,y,Out of scope: must refuse
 17,Who won the cricket match yesterday?,,,,,y,Out of scope: must refuse
-18,When is the next quiz?,,Quiz 3,18 Nov,,n,Needs today's date: Quiz 2 (6 Nov) has passed at this "now" (Sun 8 Nov); the answer is Quiz 3. This was the real-world failure (refused for lack of the date)
+18,When is the next quiz?,,Quiz 3,18 Nov;MA 221,,n,Needs today's date: Quiz 2 (6 Nov) has passed at this "now" (Sun 8 Nov); the answer is Quiz 3. This was the real-world failure (refused for lack of the date)
 19,How many quizzes are still to come?,,Quiz 3,1|one,,n,Quiz 1 and 2 have passed; only Quiz 3 is ahead at this "now"
 20,What is due this week?,,Project proposal,13 Nov,,n,"""This week"" from Sun 8 Nov: the project proposal on Fri 13 Nov"

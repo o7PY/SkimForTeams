@@ -16,7 +16,7 @@ from skim.ai.providers.router import Router
 from skim.api import chat as chat_mod
 from skim.api import routes as api_routes
 from skim.api import routes_chat
-from skim.api.chat import ChatService, _timing, check_citations, event_line, pick_events, today_line, trim_words
+from skim.api.chat import ChatService, _timing, check_citations, ensure_courses, event_line, pick_events, today_line, trim_words
 from skim.jobs.ai_embed import _row, _text
 from test_ai_embed import FakeEmbedProvider
 from test_api_deck import A, B, Api, Clock, FakeVerifier, card_for, make_event
@@ -151,7 +151,7 @@ async def test_an_answer_comes_with_numbered_citations_that_open_the_card(chat):
     await corpus(chat, ("m1", "Quiz 1 will be on Monday 2 November at 10:00 in LHC 104."), ("m2", "Please bring a calculator."))
     st, b = await chat.ask("when is quiz 1 in LHC 104")
     assert st == 200 and b["refused"] is False
-    assert b["answer"] == "The quiz is on Mon 2 Nov at 10:00 [1]."
+    assert b["answer"] == "The quiz is on Mon 2 Nov at 10:00 [1]. (from MA 221)"                          # the course is always named
     c = b["citations"]
     assert [x["n"] for x in c] == [1] and c[0]["team"] == "MA 221"
     assert "Quiz 1" in c[0]["snippet"] or "calculator" in c[0]["snippet"] or c[0]["title"]
@@ -263,6 +263,48 @@ async def test_the_card_the_student_is_looking_at_also_has_its_events_timed(chat
     await chat.ask("when is this", item_id=item)
     card_block = chat.prompts[0].split("<context>")[1].split("\n\n")[0]
     assert "Event: Quiz 1" in card_block and "in 7 days" in card_block
+
+
+def test_ensure_courses_names_every_cited_course_once_and_never_a_placeholder():
+    assert ensure_courses("Quiz 3 is on Monday [1].", ["MA 221"]) == "Quiz 3 is on Monday [1]. (from MA 221)"
+    assert ensure_courses("In MA 221, Quiz 3 is on Monday [1].", ["MA 221"]) == "In MA 221, Quiz 3 is on Monday [1]."     # already named
+    assert ensure_courses("in ma 221 it is Monday", ["MA 221"]) == "in ma 221 it is Monday"                                # case does not matter
+    assert ensure_courses("Mixed [1][2].", ["MA 221", "PH 105", "MA 221"]) == "Mixed [1][2]. (from MA 221, PH 105)"        # each once
+    assert ensure_courses("In MA 221 [1]; also [2].", ["MA 221", "PH 105"]) == "In MA 221 [1]; also [2]. (from PH 105)"     # only the missing one
+    assert ensure_courses("Nothing named.", ["Course", ""]) == "Nothing named."                                           # a placeholder is never added
+    assert ensure_courses("Plain.", []) == "Plain."
+
+
+async def test_an_answer_always_names_the_course_it_came_from_even_if_the_model_forgets(chat):
+    await chat.api.join()
+    await corpus(chat, ("m1", "Quiz 1 on Monday."))
+    chat.provider.replies = [answer("The quiz is on Monday [1].", cited=(1,))]                                            # no course named
+    st, b = await chat.ask("when is quiz 1")
+    assert st == 200 and b["answer"].endswith("(from MA 221)") and b["answer"].count("MA 221") == 1
+    chat.provider.replies = [answer("In MA 221 the quiz is on Monday [1].", cited=(1,))]                                  # already named
+    st, b = await chat.ask("when is quiz 1")
+    assert b["answer"] == "In MA 221 the quiz is on Monday [1]."
+    assert "course each fact comes from" in chat.provider.calls[0]["system"] and "name each course" in chat.provider.calls[0]["system"]
+
+
+async def test_with_two_courses_each_cited_course_is_named_and_a_refusal_names_none(chat):
+    s = chat.api.store
+    await second_team(s)
+    await chat.api.join()
+    await chat.api.join(code="ZZZ999")                                                                                    # in both teams
+    await corpus(chat, ("m1", "Quiz 1 on Monday in the maths course."))
+    await msg(s, "p1", text="Quiz on Friday in the physics course.", at=NOW - timedelta(hours=2), conv=CONV2)
+    await chat.api.build()
+    await embed_all(chat)
+    import re
+    chat.provider.replies = [lambda sysm, user: answer("Quizzes: " + " ".join(f"[{n}]" for n in re.findall(r"^\[(\d+)\]", user, re.M)),
+                                                       cited=[int(n) for n in re.findall(r"^\[(\d+)\]", user, re.M)])]
+    st, b = await chat.ask("quiz on monday or friday in the maths course or the physics course")
+    assert st == 200 and "MA 221" in b["answer"] and "PH 105" in b["answer"]
+    assert {c["team"] for c in b["citations"]} == {"MA 221", "PH 105"}
+    chat.provider.replies = [answer("I couldn't find that in your course messages.", cited=(), refused=True)]
+    st, b = await chat.ask("quiz maths physics")
+    assert b["refused"] is True and "MA 221" not in b["answer"] and "PH 105" not in b["answer"]
 
 
 async def test_the_model_is_told_the_rules_and_the_context_is_marked_as_data(chat):
