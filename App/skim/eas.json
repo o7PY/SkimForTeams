@@ -18,7 +18,8 @@
       "android": {
         "buildType": "apk"
       },
-      "channel": "preview"
+      "channel": "preview",
+      "autoIncrement": true
     },
     "production": {
       "environment": "production",
