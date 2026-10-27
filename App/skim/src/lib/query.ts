@@ -17,6 +17,7 @@ export const queryKeys = {
   starred: ['starred'] as const,
   reminders: ['reminders'] as const,
   me: ['me'] as const,
+  teamCards: ['team-cards'] as const, // ['team-cards', teamId]: one team's full card list (the Teams tab); never saved for offline
   item: ['item'] as const, // ['item', id] is one opened card; invalidating this prefix refetches them all
 };
 

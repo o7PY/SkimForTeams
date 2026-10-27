@@ -25,13 +25,15 @@ test('every tab named in the tabs layout is a real file in the group', () => {
   const dir = join(APP, '(tabs)');
   const files = readdirSync(dir).map((f: string) => f.replace(/\.tsx?$/, ''));
   const tabs = [...readFileSync(join(dir, '_layout.tsx'), 'utf8').matchAll(/name:\s*'([^']+)'/g)].map((m) => m[1]);
-  expect(tabs).toEqual(['index', 'history', 'starred', 'important']);
+  // Teams, History, the Deck in the middle, Starred, Important; the app still opens on the Deck.
+  expect(tabs).toEqual(['teams', 'history', 'index', 'starred', 'important']);
+  expect(readFileSync(join(dir, '_layout.tsx'), 'utf8')).toContain("initialRouteName: 'index'");
   for (const t of tabs) expect([t, files.includes(t)]).toEqual([t, true]);
 });
 
 test('every screen in the root layout that needs a signed-in user sits inside the signed-in guard', () => {
   const src = readFileSync(join(APP, '_layout.tsx'), 'utf8');
   const guarded = src.slice(src.indexOf("guard={status === 'signedIn'}"), src.indexOf("guard={status === 'signedOut'}"));
-  for (const n of ['(tabs)', 'join', 'settings', 'item/[id]']) expect(guarded).toContain(`name="${n}"`);
+  for (const n of ['(tabs)', 'join', 'settings', 'item/[id]', 'team/[id]']) expect(guarded).toContain(`name="${n}"`);
   expect(src.slice(src.indexOf("guard={status === 'signedOut'}"))).toContain('name="sign-in"');
 });

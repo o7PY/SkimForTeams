@@ -25,6 +25,16 @@ export const meOptions = (api: Api) => queryOptions({ queryKey: queryKeys.me, qu
 export const subscriptionsOptions = (api: Api) =>
   queryOptions({ queryKey: queryKeys.subscriptions, queryFn: async () => (await api.get<{ teams: TeamInfo[] }>('/subscriptions')).teams });
 
+export const TEAM_CARDS_PAGE = 30;
+export const teamCardsOptions = (api: Api, teamId: string) =>
+  infiniteQueryOptions({
+    queryKey: [...queryKeys.teamCards, teamId] as const,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      api.get<DeckPage>(`/teams/${encodeURIComponent(teamId)}/cards?limit=${TEAM_CARDS_PAGE}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+
 export const itemKey = (id: number | string) => [...queryKeys.item, String(id)] as const;
 export const itemOptions = (api: Api, id: number | string) =>
   queryOptions({ queryKey: itemKey(id), queryFn: () => api.get<Card>(`/items/${encodeURIComponent(String(id))}`) });

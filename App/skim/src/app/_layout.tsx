@@ -38,6 +38,7 @@ function Routes({ ready }: { ready: boolean }) {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="join" />
           <Stack.Screen name="settings" />
+          <Stack.Screen name="team/[id]" />
           <Stack.Screen name="item/[id]" options={{ animation: 'none' }} />
         </Stack.Protected>
         <Stack.Protected guard={status === 'signedOut'}>
