@@ -50,18 +50,6 @@ export async function cancelAllReminders(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
-/** A reminder 60 seconds from now: lets the student see that reminders arrive on time on this phone (acceptance A8). */
-export async function scheduleTestReminder(): Promise<Date> {
-  await ensureChannels();
-  const at = new Date(Date.now() + 60_000);
-  await Notifications.scheduleNotificationAsync({
-    identifier: `${LOCAL_PREFIX}test`,
-    content: { title: 'Skim test reminder', body: 'If you can read this, reminders reach this phone on time.', data: { type: 'reminder' }, sound: 'default' },
-    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at, channelId: 'reminders' },
-  });
-  return at;
-}
-
 // ---------------------------------------------------------------- exact alarms (Android 12+)
 export type ExactAlarm = 'granted' | 'denied' | 'unsupported';
 

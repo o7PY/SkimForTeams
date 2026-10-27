@@ -4,9 +4,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Linking, ScrollView, TextInput, View } from 'react-native';
 
 import { makeStyles, radius, space, teamAccent, useTheme } from '@/constants/theme';
-import { toIstIso } from '@/lib/actions';
-import { formatTime } from '@/lib/format';
-import { exactAlarmStatus, requestExactAlarm, scheduleTestReminder, type ExactAlarm } from '@/lib/notif-adapter';
+import { exactAlarmStatus, requestExactAlarm, type ExactAlarm } from '@/lib/notif-adapter';
 import { permissionAction } from '@/lib/notif-permission';
 import { useOutbox } from '@/lib/outbox-runtime';
 import { usePush } from '@/lib/push-runtime';
@@ -44,7 +42,6 @@ export default function Settings() {
   const [busy, setBusy] = useState<null | 'signout' | 'delete'>(null);
   const [exact, setExact] = useState<ExactAlarm>('unsupported');
   const [exactTick, setExactTick] = useState(0);
-  const [testNote, setTestNote] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [typed, setTyped] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -126,15 +123,6 @@ export default function Settings() {
             <StepperRow label="Quiet until" value={q.end} onMinus={() => void update({ quiet_hours: { end: stepTime(q.end, -TIME_STEP) } })} onPlus={() => void update({ quiet_hours: { end: stepTime(q.end, TIME_STEP) } })} />
           </>
         ) : null}
-        <OptionRow icon="bell-ring-outline" label="Send me a test reminder" detail={testNote ?? 'Arrives in about a minute'} disabled={!allowed}
-          onPress={async () => {
-            try {
-              const at = await scheduleTestReminder();
-              setTestNote(`Scheduled for ${formatTime(toIstIso(at.getTime())) ?? 'soon'} (India time)`);
-            } catch {
-              setTestNote('Couldn’t schedule the test');
-            }
-          }} />
 
         <SectionTitle>Reminders</SectionTitle>
         <SwitchRow label="Remind me automatically" detail="For the kinds you marked Important" value={r.auto_for_important} onChange={(v) => void update({ reminders: { auto_for_important: v } })} />

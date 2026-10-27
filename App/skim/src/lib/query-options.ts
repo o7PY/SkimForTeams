@@ -5,7 +5,7 @@ import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import type { Api, Me } from './api';
 import type { TeamInfo } from './join';
 import { queryKeys } from './query';
-import type { RemindersResponse } from './reminder-plan';
+import type { RemindersAllResponse, RemindersResponse } from './reminder-plan';
 import type { Card, DeckPage } from './types';
 
 export const DECK_PAGE = 50; // the first page already holds the 50 cards the phone keeps for offline use
@@ -21,6 +21,9 @@ export const deckOptions = (api: Api) =>
 export const historyOptions = (api: Api) => queryOptions({ queryKey: queryKeys.history, queryFn: () => api.get<{ cards: Card[] }>('/history') });
 export const starredOptions = (api: Api) => queryOptions({ queryKey: queryKeys.starred, queryFn: () => api.get<{ cards: Card[] }>('/starred') });
 export const remindersOptions = (api: Api) => queryOptions({ queryKey: queryKeys.reminders, queryFn: () => api.get<RemindersResponse>('/reminders?days=30') });
+export const REMINDER_LIST_DAYS = 60;
+export const remindersAllOptions = (api: Api) =>
+  queryOptions({ queryKey: queryKeys.remindersAll, queryFn: () => api.get<RemindersAllResponse>(`/reminders/all?days=${REMINDER_LIST_DAYS}`) });
 export const meOptions = (api: Api) => queryOptions({ queryKey: queryKeys.me, queryFn: () => api.get<Me>('/me') });
 export const subscriptionsOptions = (api: Api) =>
   queryOptions({ queryKey: queryKeys.subscriptions, queryFn: async () => (await api.get<{ teams: TeamInfo[] }>('/subscriptions')).teams });

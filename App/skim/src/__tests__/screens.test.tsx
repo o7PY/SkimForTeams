@@ -23,6 +23,7 @@ jest.mock('@/ui/icon', () => {
 });
 jest.mock('@/ui/atmosphere', () => ({ Atmosphere: () => null }));
 jest.mock('@/lib/use-settings', () => ({ useSettings: () => ({ settings: mockSettings, ready: true, update: mockUpdate }) }));
+jest.mock('@/lib/reminders-list', () => ({ useReminderList: () => ({ reminders: [], isPending: false, isError: false, data: { reminders: [] }, isRefetching: false, refetch: jest.fn() }), useReminderSwitch: () => jest.fn() }));
 jest.mock('@/lib/lists', () => ({ useHistory: () => mockList, useStarred: () => mockList, useListActions: () => ({ putBack: mockPutBack, unstar: mockUnstar }) }));
 
 const isText = (n: ReactTestInstance) => (n.type as unknown) === 'Text';

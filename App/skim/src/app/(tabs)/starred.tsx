@@ -1,5 +1,7 @@
-// Starred (PHASE4.md 7.2 item 6): permanent stars, and temporary ones with how long they have left.
+// Starred (PHASE4.md 7.2 item 6): permanent stars, and temporary ones with how long they have left. A second view lists every
+// reminder with an on/off switch.
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 
 import { makeStyles, space, useTheme } from '@/constants/theme';
@@ -7,13 +9,19 @@ import { starExpiryLabel } from '@/lib/format';
 import { useListActions, useStarred } from '@/lib/lists';
 import { haptics } from '@/lib/haptics';
 import { Reveal } from '@/ui/motion';
+import { ReminderList } from '@/ui/reminder-list';
+import { Segmented } from '@/ui/segmented';
 import { ErrorState, RowSkeletons } from '@/ui/states';
 import { CardRow, Empty } from '@/ui/rows';
 import { TabScreen } from '@/ui/tab-screen';
 
+type StarredView = 'stars' | 'reminders';
+const VIEWS: readonly { id: StarredView; label: string }[] = [{ id: 'stars', label: 'Starred' }, { id: 'reminders', label: 'Reminders' }];
+
 export default function Starred() {
   const styles = useStyles();
   const t = useTheme();
+  const [view, setView] = useState<StarredView>('stars');
   const s = useStarred();
   const actions = useListActions();
   const now = new Date();
@@ -22,8 +30,11 @@ export default function Starred() {
   const cards = s.cards.filter((c) => starExpiryLabel(c.user.temp_star_expires_at, now) !== 'expired');
 
   return (
-    <TabScreen title="Starred" subtitle={cards.length ? `${cards.length} saved` : undefined}>
-      {s.isPending && !s.data ? (
+    <TabScreen title="Starred" subtitle={view === 'stars' && cards.length ? `${cards.length} saved` : undefined}>
+      <Segmented<StarredView> value={view} onChange={setView} options={VIEWS} />
+      {view === 'reminders' ? (
+        <ReminderList />
+      ) : s.isPending && !s.data ? (
         <RowSkeletons />
       ) : (
         <FlatList

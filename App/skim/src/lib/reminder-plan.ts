@@ -12,6 +12,9 @@ export type ServerReminder = {
   body: string;
   virtual?: boolean;
 };
+/** A row of the Reminders list: a reminder that is on (scheduled on this phone) or switched off (kept, not scheduled). */
+export type ListedReminder = ServerReminder & { enabled: boolean };
+export type RemindersAllResponse = { reminders: ListedReminder[]; computed_at?: string };
 export type RemindersResponse = { reminders: ServerReminder[]; etag: string; computed_at?: string };
 
 export type Planned = { id: string; at: Date; title: string; body: string; data: { type: 'reminder'; reminder_id: string; item_id?: number } };
