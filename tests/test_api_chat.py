@@ -182,6 +182,19 @@ async def test_the_card_the_student_is_looking_at_is_context_one_with_its_events
     assert first.count("Event: Quiz 1") == 1                                                                 # not repeated as a separate fact
 
 
+async def test_this_means_the_card_only_when_a_card_is_anchored(chat):
+    await chat.api.join()
+    await msg(chat.api.store, "orig", text="Quiz 1 has moved to Thursday.", at=NOW - timedelta(days=1))
+    await make_event(chat.api, "orig", NOW - timedelta(days=1))
+    item = await card_for(chat.api, "orig")
+    await chat.ask("has this changed", item_id=item)
+    await chat.ask("has the quiz changed")
+    anchored, plain = chat.prompts[0], chat.prompts[1]
+    assert "looking at entry [1]" in anchored and '"this" and "it"' in anchored
+    assert "looking at entry [1]" not in plain
+    assert '"this" or "it"' in chat.provider.calls[0]["system"] and "answered yes" in chat.provider.calls[0]["system"]
+
+
 async def test_events_are_facts_with_status_venue_and_an_unconfirmed_flag(chat):
     s = chat.api.store
     await chat.api.join()

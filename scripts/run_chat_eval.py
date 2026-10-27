@@ -177,8 +177,12 @@ async def main() -> int:
     ap.add_argument("--interval", type=float, default=2.0, help="seconds between model calls (free-tier pacing)")
     ap.add_argument("--log", default=str(ROOT / "Bookkeeping" / "PHASE6A_EVAL.md"))
     ap.add_argument("--no-log", action="store_true")
+    ap.add_argument("--only", help="comma-separated question ids to run (e.g. 15 or 11,15): a cheap re-check after a prompt change")
     a = ap.parse_args()
     questions = list(csv.DictReader(open(a.questions, newline="", encoding="utf-8")))
+    if a.only:
+        wanted = {x.strip() for x in a.only.split(",")}
+        questions = [q for q in questions if q["id"] in wanted]
     cfg = AIConfig.from_env()
     if not a.dry and not cfg.enabled:
         print("Real run needs GEMINI_API_KEY, GROQ_API_KEY and GROQ_MODEL in the environment (or use --dry).", file=sys.stderr)
