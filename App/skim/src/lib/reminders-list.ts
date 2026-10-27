@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import { useAuth } from './auth';
+import { calm } from './lists';
 import { useOutbox } from './outbox-runtime';
 import { queryKeys } from './query';
 import { remindersAllOptions } from './query-options';
@@ -30,7 +31,7 @@ export function useReminderList() {
   const { api } = useAuth();
   const { ops, pending } = useOutbox();
   // While a switch is still waiting to be sent, a refresh would show the server's OLD view and flip it back: hold still until delivered.
-  const q = useQuery({ ...remindersAllOptions(api), ...(pending === 0 ? {} : { refetchOnMount: false as const, refetchOnReconnect: false as const }) });
+  const q = useQuery({ ...remindersAllOptions(api), ...calm(pending) });
   const held = useMemo(() => pendingSwitches(ops), [ops]);
   const reminders = useMemo<ListedReminder[]>(() => (q.data?.reminders ?? []).map((r) => (held.has(r.id) ? { ...r, enabled: held.get(r.id) as boolean } : r)), [q.data, held]);
   return { ...q, reminders };

@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 
 import { useAuth } from './auth';
 import { OutboxProvider } from './outbox-runtime';
 import { PushProvider } from './push-runtime';
+import { wireQueryLifecycle } from './query-lifecycle';
 import { CACHE_BUSTER, CACHE_MAX_AGE, createPersister, createQueryClient, queryKeys } from './query';
 
 export { AsyncStorage };
@@ -14,6 +15,7 @@ export { AsyncStorage };
 export function SessionProviders({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const userId = session?.user.id ?? null;
+  useEffect(() => wireQueryLifecycle(), []); // opening the app and getting the connection back refresh the screens (once)
   const queryClient = useMemo(() => createQueryClient(), [userId]); // eslint-disable-line react-hooks/exhaustive-deps -- a new cache per account
   const persister = useMemo(() => createPersister(userId ?? 'signed-out'), [userId]);
   return (

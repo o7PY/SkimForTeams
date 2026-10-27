@@ -14,7 +14,8 @@ type List = { cards: Card[] };
 
 /** While changes are still waiting to be sent, a refresh of these lists would show the server's OLD view and wipe what the student
  *  just did (a card swiped or starred offline). So they hold still until the outbox is empty; its delivery refetches everything. */
-const calm = (pending: number) => (pending === 0 ? {} : { refetchOnMount: false as const, refetchOnReconnect: false as const });
+export const calm = (pending: number) =>
+  pending === 0 ? {} : { refetchOnMount: false as const, refetchOnReconnect: false as const, refetchOnWindowFocus: false as const };
 
 export function useHistory() {
   const { api } = useAuth();
