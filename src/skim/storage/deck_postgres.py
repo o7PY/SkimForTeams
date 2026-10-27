@@ -112,6 +112,18 @@ class PostgresDeckMixin:
                order by st.acted_at desc, st.item_id desc limit $2""", user_id, limit)
         return [_d(r) for r in rows]
 
+    async def list_team_items(self, user_id: str, team_id: str, limit: int, before: tuple[datetime, int] | None) -> list[dict]:
+        """One team's visible cards (a deleted message or a folded duplicate is hidden), newest first, for an active member of the
+        team; empty for anyone else. `before` = (occurred_at, id) of the last card of the previous page."""
+        assert self.pool
+        rows = await self.pool.fetch(
+            """select f.id, f.occurred_at from feed_items f
+               join subscriptions s on s.team_id = f.team_id and s.user_id = $1 and s.left_at is null
+               where f.team_id = $2 and not f.hidden and ($4::timestamptz is null or (f.occurred_at, f.id) < ($4, $5))
+               order by f.occurred_at desc, f.id desc limit $3""",
+            user_id, team_id, limit, before[0] if before else None, before[1] if before else None)
+        return [_d(r) for r in rows]
+
     async def folded_children(self, user_id: str, parent_ids: list[int]) -> dict[int, list[int]]:
         assert self.pool
         out: dict[int, list[int]] = {}

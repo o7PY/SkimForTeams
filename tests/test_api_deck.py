@@ -640,3 +640,55 @@ async def _delete_message(s, mid):
     from skim.normalize import MessageEvent
     from test_feed_build import raw
     await s.apply_message_event(MessageEvent(conversation_id=CONV, message_id=mid, event="deleted", at=NOW), await raw(s, "del-" + mid))
+
+
+# ---------------------------------------------------------------- a team's cards (the app's Teams tab)
+async def test_team_cards_lists_every_visible_card_of_the_team_newest_first_including_swiped_ones(api):
+    s = api.store
+    await msg(s, "m1", at=NOW - timedelta(hours=1))
+    await msg(s, "m2", at=NOW - timedelta(hours=2))
+    await msg(s, "m3", at=NOW - timedelta(hours=3))
+    a, b, c = await card_for(api, "m1"), await card_for(api, "m2"), await card_for(api, "m3")
+    await api.join()
+    await api.call("POST", f"/items/{b}/state", json={"action": "dismiss"})
+    st, body = await api.call("GET", "/teams/T1/cards")
+    assert st == 200 and [x["id"] for x in body["cards"]] == [a, b, c] and body["next_cursor"] is None
+    assert body["cards"][1]["user"]["snoozed_until"] is None                      # same card shape as the deck
+
+
+async def test_team_cards_pages_with_a_cursor_and_validates_its_input(api):
+    s = api.store
+    for n in range(5):
+        await msg(s, f"m{n}", at=NOW - timedelta(hours=n + 1))
+    ids = [await card_for(api, f"m{n}") for n in range(5)]
+    await api.join()
+    seen, cursor = [], None
+    for _ in range(5):
+        st, body = await api.call("GET", "/teams/T1/cards", params={"limit": 2, **({"cursor": cursor} if cursor else {})})
+        assert st == 200
+        seen += [x["id"] for x in body["cards"]]
+        cursor = body["next_cursor"]
+        if cursor is None:
+            break
+    assert seen == ids                                                            # every card once, in order
+    assert (await api.call("GET", "/teams/T1/cards", params={"limit": 0}))[0] == 400
+    assert (await api.call("GET", "/teams/T1/cards", params={"limit": 101}))[0] == 400
+    assert (await api.call("GET", "/teams/T1/cards", params={"cursor": "nonsense"}))[0] == 400
+
+
+async def test_team_cards_is_404_for_a_team_you_are_not_in_and_hides_deleted_messages(api):
+    s = api.store
+    await msg(s, "m1")
+    await card_for(api, "m1")
+    assert (await api.call("GET", "/teams/T1/cards"))[0] == 404                   # not joined yet
+    await api.join()
+    assert (await api.call("GET", "/teams/T1/cards", "b"))[0] == 404              # another user who never joined
+    assert (await api.call("GET", "/teams/NOPE/cards"))[0] == 404
+    assert len((await api.call("GET", "/teams/T1/cards"))[1]["cards"]) == 1
+    await api.call("DELETE", "/subscriptions/T1")
+    assert (await api.call("GET", "/teams/T1/cards"))[0] == 404                   # left: nothing is shown
+
+
+async def test_team_cards_needs_a_token(api):
+    r = await api.client.get("/api/v1/teams/T1/cards")
+    assert r.status == 401

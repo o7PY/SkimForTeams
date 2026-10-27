@@ -95,6 +95,16 @@ class MemoryDeckMixin:
         rows.sort(key=lambda r: (r["acted_at"], r["item_id"]), reverse=True)
         return rows[:limit]
 
+    async def list_team_items(self, user_id: str, team_id: str, limit: int, before: tuple[datetime, int] | None) -> list[dict]:
+        if team_id not in self._active_teams(user_id):
+            return []
+        rows = [{"id": i, "occurred_at": f["occurred_at"]} for i, f in self.feed_items.items()
+                if f["team_id"] == team_id and not f["hidden"]]
+        rows.sort(key=lambda r: (r["occurred_at"], r["id"]), reverse=True)
+        if before is not None:
+            rows = [r for r in rows if (r["occurred_at"], r["id"]) < before]
+        return rows[:limit]
+
     async def folded_children(self, user_id: str, parent_ids: list[int]) -> dict[int, list[int]]:
         out: dict[int, list[int]] = {}
         for (uid, i), st in sorted(self.user_item_state.items(), key=lambda kv: kv[0][1]):

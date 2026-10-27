@@ -2,6 +2,8 @@
 token's user; an item outside the user's active teams is a 404, never a 403, so ids cannot be probed."""
 from __future__ import annotations
 
+import base64
+import json
 from datetime import datetime, timedelta
 from typing import Callable
 
@@ -17,11 +19,28 @@ JOIN_WINDOW = timedelta(hours=1)
 MAX_SNOOZE = timedelta(days=31)
 DECK_LIMIT_DEFAULT, DECK_LIMIT_MAX = 30, 100
 DECK_CANDIDATES = 1500
+TEAM_CARDS_DEFAULT, TEAM_CARDS_MAX = 30, 100
 STAR_TEMP = {"1d": timedelta(days=1), "3d": timedelta(days=3), "7d": timedelta(days=7)}
 
 
 def err(status: int, message: str, **extra) -> web.Response:
     return web.json_response({"error": message, **extra}, status=status)
+
+
+def encode_team_cursor(row: dict) -> str:
+    """Keyset cursor of a team's card list: where the last card of the page sits (time, id)."""
+    return base64.urlsafe_b64encode(json.dumps([cards.iso(row["occurred_at"]), row["id"]]).encode()).decode().rstrip("=")
+
+
+def decode_team_cursor(raw: str) -> tuple[datetime, int] | None:
+    try:
+        at, iid = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+        if not isinstance(at, str) or not isinstance(iid, int) or isinstance(iid, bool):
+            return None
+        when = datetime.fromisoformat(at)
+        return (when, iid) if when.tzinfo is not None else None
+    except Exception:
+        return None
 
 
 def team_json(s: dict) -> dict:
@@ -162,6 +181,27 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
             c["swiped"] = {"state": meta[c["id"]]["state"], "at": cards.iso(meta[c["id"]]["acted_at"])}
         return web.json_response({"cards": out})
 
+    async def team_cards(request: web.Request) -> web.Response:
+        """Every visible card of one team the user is in, newest first (the Teams tab). Read-only; 404 for any other team."""
+        uid, tid = request[user_key]["id"], request.match_info["team_id"]
+        if not any(s["team_id"] == tid for s in await storage.list_subscriptions(uid)):
+            return err(404, "not found")
+        limit = TEAM_CARDS_DEFAULT
+        if "limit" in request.query:
+            raw = request.query["limit"]
+            if not raw.isdigit() or not 1 <= int(raw) <= TEAM_CARDS_MAX:
+                return err(400, f"limit must be 1 to {TEAM_CARDS_MAX}")
+            limit = int(raw)
+        before = None
+        if request.query.get("cursor"):
+            before = decode_team_cursor(request.query["cursor"])
+            if before is None:
+                return err(400, "bad cursor")
+        rows = await storage.list_team_items(uid, tid, limit + 1, before)
+        page = rows[:limit]
+        nxt = encode_team_cursor(page[-1]) if len(rows) > limit and page else None
+        return web.json_response({"cards": await render(uid, [r["id"] for r in page], {}), "next_cursor": nxt})
+
     # ------------------------------------------------------------ swipe state
     async def set_state(request: web.Request) -> web.Response:
         iid = await item_or_404(request)
@@ -253,6 +293,7 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
     r.add_post("/items/{id}/state", set_state)
     r.add_put("/items/{id}/star", put_star)
     r.add_delete("/items/{id}/star", delete_star)
+    r.add_get("/teams/{team_id}/cards", team_cards)
     r.add_get("/history", history)
     r.add_get("/starred", starred)
 
