@@ -16,7 +16,7 @@ from skim.ai.providers.router import Router
 from skim.api import chat as chat_mod
 from skim.api import routes as api_routes
 from skim.api import routes_chat
-from skim.api.chat import ChatService, check_citations, event_line, pick_events, trim_words
+from skim.api.chat import ChatService, _timing, check_citations, event_line, pick_events, today_line, trim_words
 from skim.jobs.ai_embed import _row, _text
 from test_ai_embed import FakeEmbedProvider
 from test_api_deck import A, B, Api, Clock, FakeVerifier, card_for, make_event
@@ -110,6 +110,23 @@ def test_event_line_says_when_where_status_and_unconfirmed():
     assert "Mon 2 Nov 2026, 10:00" in line and "venue LHC 104" in line and "UNCONFIRMED" in line and "status scheduled" in line
     assert "time not announced" in event_line({**chip, "start": "2026-11-02", "all_day": True, "unconfirmed": False})
     assert "no date announced" in event_line({**chip, "start": None})
+
+
+def test_timing_says_in_plain_words_how_far_an_event_is_from_today_in_india_time():
+    from datetime import datetime, timezone
+    now = datetime(2026, 10, 26, 20, 0, tzinfo=timezone.utc)                     # 01:30 on Tue 27 Oct in India
+    assert _timing("2026-10-25", now) == "ALREADY PASSED"
+    assert _timing("2026-10-27", now) == "today"                                 # today in India, though still Mon 26 in UTC
+    assert _timing("2026-10-28", now) == "tomorrow"
+    assert _timing("2026-11-02", now) == "in 6 days"
+    assert _timing("2026-10-26T15:00:00+05:30", now) == "ALREADY PASSED"          # yesterday afternoon
+    assert _timing("2026-10-27T10:00:00+05:30", now) == "today"
+    assert _timing("2026-10-27T01:00:00+05:30", now) == "ALREADY PASSED"          # earlier today than now (01:30)
+    assert _timing("2026-12-20T10:00:00+05:30", now) == "in 54 days"
+    assert _timing(None, now) is None and _timing("2026-10-28", None) is None and _timing("garbage", now) is None
+    assert today_line(now) == "Tuesday 27 October 2026, 01:30 (India time)"
+    chip = {"title": "Quiz 2", "type": "quiz", "start": "2026-10-26T15:00:00+05:30", "all_day": False, "venue": None, "status": "rescheduled", "unconfirmed": False}
+    assert "ALREADY PASSED" in event_line(chip, now) and "ALREADY PASSED" not in event_line(chip)   # without a clock: as before
 
 
 def test_pick_events_takes_upcoming_and_matching_ones_and_skips_past_non_matches():
@@ -208,6 +225,44 @@ async def test_events_are_facts_with_status_venue_and_an_unconfirmed_flag(chat):
     assert st == 200
     p = chat.prompts[0]
     assert "Event: Quiz 1" in p and "venue LHC 104" in p and "UNCONFIRMED" in p and "status scheduled" in p
+
+
+async def test_without_a_card_the_model_is_told_today_and_which_events_have_passed(chat):
+    """The real bug: "when is the next quiz?" with no card was refused, because the model did not know what day it was."""
+    s = chat.api.store
+    await chat.api.join()
+    await msg(s, "old", text="Quiz 1 was on the 20th.", at=NOW - timedelta(days=6))
+    await make_event(chat.api, "old", NOW - timedelta(days=6), date(2026, 10, 20))
+    await msg(s, "new", text="Quiz 2 is on the 2nd.", at=NOW - timedelta(days=1))
+    await make_event(chat.api, "new", NOW - timedelta(days=1), date(2026, 11, 2))
+    await chat.api.build()
+    st, b = await chat.ask("when is the next quiz")
+    assert st == 200
+    p = chat.prompts[0]
+    assert p.startswith("<today>Monday 26 October 2026, 17:30 (India time)</today>")                      # NOW is 12:00 UTC
+    old = next(ln for ln in p.splitlines() if "Tue 20 Oct 2026" in ln and ln.startswith("Event:"))
+    new = next(ln for ln in p.splitlines() if "Mon 2 Nov 2026" in ln and ln.startswith("Event:"))
+    assert "ALREADY PASSED" in old and "ALREADY PASSED" not in new and "in 7 days" in new
+    sysmsg = chat.provider.calls[0]["system"]
+    for needle in ("<today>", "ALREADY PASSED", "soonest event that has not passed", "count the event entries", "trust the event entry", "\"rescheduled\" means"):
+        assert needle in sysmsg
+
+
+async def test_retrieved_messages_say_when_they_were_posted_so_older_ones_can_be_told_from_newer(chat):
+    await chat.api.join()
+    await corpus(chat, ("m1", "Quiz 1 will be on Friday 30 October."))
+    await chat.ask("when is quiz 1 on friday")
+    assert "(message, posted " in chat.prompts[0] and "posted Mon 26 Oct 2026" in chat.prompts[0]
+
+
+async def test_the_card_the_student_is_looking_at_also_has_its_events_timed(chat):
+    await chat.api.join()
+    await msg(chat.api.store, "orig", text="Quiz 1 will be on Monday.", at=NOW - timedelta(days=1))
+    await make_event(chat.api, "orig", NOW - timedelta(days=1))
+    item = await card_for(chat.api, "orig")
+    await chat.ask("when is this", item_id=item)
+    card_block = chat.prompts[0].split("<context>")[1].split("\n\n")[0]
+    assert "Event: Quiz 1" in card_block and "in 7 days" in card_block
 
 
 async def test_the_model_is_told_the_rules_and_the_context_is_marked_as_data(chat):

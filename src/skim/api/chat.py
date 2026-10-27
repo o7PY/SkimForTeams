@@ -20,7 +20,7 @@ from ..ai.embeddings import Embedder
 from ..ai.providers.base import ProviderError
 from ..ai.redact import Redactor
 from ..ai.providers.router import Router
-from ..eventtime import is_upcoming
+from ..eventtime import IST, is_upcoming
 from ..storage.base import Storage
 from . import cards, user_settings
 from .deeplink import teams_message_link
@@ -45,6 +45,9 @@ Rules:
 - Use only facts that appear in the numbered context. No outside knowledge, no guessing.
 - When the student says "this" or "it", they mean the entry marked "the card the student is looking at". If that card itself reports a move, a postponement, a cancellation or a new venue or time, then "has this changed?" is answered yes, and you say what changed.
 - Cite the sources you used like [1] or [2][3], right after the fact they support.
+- Today's date and time are in <today>. Use them for "next", "upcoming", "this week", "next month", "today", "tomorrow", and to tell events that have already passed from ones still to come. Every event entry says whether it has ALREADY PASSED or how far away it is.
+- For "next" or "upcoming" questions, answer with the soonest event that has not passed. To count events ("how many ... next month"), count the event entries whose dates fall in that period, and name them.
+- Event entries are the current facts. A status of "rescheduled" means the date shown is already the new, current date. If a message and an event entry disagree, trust the event entry: messages may be older (each says when it was posted).
 - Never invent a date, time, room or deadline. If the context does not give it, say it has not been announced.
 - If a context entry says UNCONFIRMED, tell the student that date is unconfirmed and may change.
 - If an event is cancelled or postponed, say so.
@@ -75,6 +78,7 @@ class Source:
     document_id: int | None = None
     link: str | None = None
     ref: tuple | None = None        # ("message", conv, msg) | ("document", id) | ("event", id)
+    posted: str | None = None       # a message: the day it was posted (India date), so older posts can be told from newer ones
 
 
 # ------------------------------------------------------------------------------------------------ small pure helpers
@@ -90,9 +94,36 @@ def _when(start: str | None, all_day: bool) -> str:
         return start
 
 
-def event_line(chip: dict) -> str:
-    """One event as a fact the model can quote: what, when, where, status, and whether it is unconfirmed."""
+def _timing(start: str | None, now: datetime | None) -> str | None:
+    """How far away an event is, in words the model cannot misread: ALREADY PASSED, today, tomorrow, in N days (India dates)."""
+    if not start or now is None:
+        return None
+    try:
+        today = now.astimezone(IST).date()
+        if "T" in start:
+            d = datetime.fromisoformat(start)
+            if d < now:
+                return "ALREADY PASSED"
+            days = (d.astimezone(IST).date() - today).days
+        else:
+            days = (date.fromisoformat(start) - today).days
+            if days < 0:
+                return "ALREADY PASSED"
+    except ValueError:
+        return None
+    return "today" if days == 0 else "tomorrow" if days == 1 else f"in {days} days"
+
+
+def today_line(now: datetime) -> str:
+    return now.astimezone(IST).strftime("%A %-d %B %Y, %H:%M") + " (India time)"
+
+
+def event_line(chip: dict, now: datetime | None = None) -> str:
+    """One event as a fact the model can quote: what, when (and how far from today), where, status, and whether it is unconfirmed."""
     bits = [f"Event: {chip['title']}", f"type {chip['type']}", f"when {_when(chip.get('start'), chip.get('all_day', False))}"]
+    timing = _timing(chip.get("start"), now)
+    if timing:
+        bits.append(timing)
     if chip.get("venue"):
         bits.append(f"venue {chip['venue']}")
     bits.append(f"status {chip.get('status') or 'scheduled'}")
@@ -186,7 +217,7 @@ class ChatService:
 
         red = Redactor([])
         q_red = red.redact(question)            # the question first, so a name in it and in a source share a placeholder
-        prompt = self._prompt(sources, history, q_red, red)
+        prompt = self._prompt(sources, history, q_red, red, now)
         completion = await self.router.complete(ChatAnswer, SYSTEM, prompt)
         out: ChatAnswer = completion.value
         text, nums = check_citations(trim_words(red.restore(out.answer) or ""), out.cited, {s.n for s in sources})
@@ -220,7 +251,7 @@ class ChatService:
         if ch:
             parts.append(f"Date change ({ch.get('type')}): before {_side(ch.get('before'))}; after {_side(ch.get('after'))}")
         for e in card["events"]:
-            parts.append(event_line(e))
+            parts.append(event_line(e, now))
         by_event = {e["id"]: e for e in card["events"]}
         for h in card.get("event_history") or []:
             for c in h["changes"]:
@@ -246,7 +277,7 @@ class ChatService:
         newest = await self.storage.latest_items_for_events(uid, [e["id"] for e in picked])
         out = []
         for e in picked:
-            line = event_line(cards.event_chip(e, set(), detail=True))
+            line = event_line(cards.event_chip(e, set(), detail=True), now)
             out.append(Source(0, "event", teams.get(e["team_id"], "Course"), e["title"], line, item_id=newest.get(e["id"]), ref=("event", e["id"])))
         return out
 
@@ -285,8 +316,10 @@ class ChatService:
                     if h["team_id"] not in channels:
                         channels.update({c["id"]: c.get("display_name") or "" for c in await self.storage.list_channels(h["team_id"])})
                     link = teams_message_link(all_teams[h["team_id"]], channels.get(key[1]), key[1], key[2], m.get("reply_to_id"))
+                posted = m.get("created_at")
                 out.append(Source(0, "message", tname, title, h["snippet"][:MAX_SOURCE_CHARS], [m["from_name"]] if m.get("from_name") else [],
-                                  item_id=have.get(key), message_id=key[2], link=link, ref=key))
+                                  item_id=have.get(key), message_id=key[2], link=link, ref=key,
+                                  posted=posted.astimezone(IST).strftime("%a %-d %b %Y") if posted else None))
             else:
                 did = h["ref"]["document_id"]
                 d = await self.storage.get_document_by_id(did) or {}
@@ -295,11 +328,13 @@ class ChatService:
                                   item_id=have.get(("document", did)), document_id=did, link=d.get("web_url"), ref=("document", did)))
         return out, stats
 
-    def _prompt(self, sources: list[Source], history: list[dict], q_red: str, red: Redactor) -> str:
+    def _prompt(self, sources: list[Source], history: list[dict], q_red: str, red: Redactor, now: datetime) -> str:
         blocks = []
         for s in sources:
             red.add_names(s.names)
             label = {"card": "the card the student is looking at", "event": "event", "message": "message", "file": "file"}[s.kind]
+            if s.posted:
+                label += f", posted {s.posted}"
             blocks.append(f"[{s.n}] ({label}) {red.redact(s.team)} / {red.redact(s.title)}\n{red.redact(s.text)}")
         turns = []
         for h in history[-HISTORY_TURNS:]:
@@ -308,7 +343,7 @@ class ChatService:
         convo = ("<conversation>\n" + "\n".join(turns) + "\n</conversation>\n") if turns else ""
         look = ("<note>The student is looking at entry [1]: \"this\" and \"it\" in the question mean entry [1].</note>\n"
                 if sources and sources[0].kind == "card" else "")
-        return "<context>\n" + "\n\n".join(blocks) + "\n</context>\n" + convo + look + f"<question>{q_red}</question>"
+        return f"<today>{today_line(now)}</today>\n<context>\n" + "\n\n".join(blocks) + "\n</context>\n" + convo + look + f"<question>{q_red}</question>"
 
     async def _citations(self, uid: str, used: list[Source], teams: dict[str, str]) -> list[dict]:
         out = []
