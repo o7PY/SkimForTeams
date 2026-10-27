@@ -206,7 +206,7 @@ async def main() -> int:
             return 2
         from skim.storage.postgres import PostgresStorage
         storage = PostgresStorage(os.environ["DATABASE_URL"])
-        await storage.connect() if hasattr(storage, "connect") else None
+        await storage.start()
         uid, now = a.user_id, datetime.now(timezone.utc)
         corpus = "LIVE (read-only, the student's own teams)"
     else:

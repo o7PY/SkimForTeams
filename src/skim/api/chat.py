@@ -172,14 +172,16 @@ class ChatService:
             if src:
                 sources.append(src)
         events = await self.storage.list_events_all_for_user(user_id, EVENT_SCAN)
-        sources += await self._events(user_id, events, question, anchored_events, teams, now)
-        retrieved = await self._retrieve(user_id, question, teams, anchored_key)
+        event_sources = await self._events(user_id, events, question, anchored_events, teams, now)
+        sources += event_sources
+        retrieved, stats = await self._retrieve(user_id, question, teams, anchored_key)
         sources += retrieved
+        stats.update(teams=len(teams), events_scanned=len(events), events_picked=len(event_sources))
         for i, s in enumerate(sources, 1):
             s.n = i
 
         if not sources:
-            self._log(sources, started, True, "none")
+            self._log(sources, started, True, "none", stats)
             return {"answer": CANNOT_FIND, "citations": [], "refused": True}
 
         red = Redactor([])
@@ -192,7 +194,7 @@ class ChatService:
         if not text:
             text = CANNOT_FIND
         cites = [] if refused else await self._citations(user_id, [s for s in sources if s.n in nums], teams)
-        self._log(sources, started, refused, completion.provider)
+        self._log(sources, started, refused, completion.provider, stats)
         return {"answer": text, "citations": cites, "refused": refused}
 
     # ---------------------------------------------------------------- context
@@ -248,15 +250,21 @@ class ChatService:
             out.append(Source(0, "event", teams.get(e["team_id"], "Course"), e["title"], line, item_id=newest.get(e["id"]), ref=("event", e["id"])))
         return out
 
-    async def _retrieve(self, uid: str, question: str, teams: dict[str, str], skip_key: tuple | None) -> list[Source]:
+    async def _retrieve(self, uid: str, question: str, teams: dict[str, str], skip_key: tuple | None) -> tuple[list[Source], dict]:
+        """(sources, numbers for the log): how many vector hits there were, how many cleared the relevance floor, the best score."""
+        stats: dict = {"embedder": bool(self.embedder and self.embedder.usable), "hits_raw": 0, "hits_kept": 0, "best_score": None}
         if not teams or self.embedder is None or not self.embedder.usable:
-            return []
+            return [], stats
         try:
             vec = await self.embedder.embed_query(question)   # redacts the query itself before it leaves the process
         except ProviderError:
             log.warning(json.dumps({"event": "chat_embed_failed"}))
-            return []                                         # events and the card can still answer
-        hits = [h for h in await self.storage.search_embeddings_teams(vec, self.cfg.embed_model, list(teams), TOP_K) if h["score"] >= MIN_SCORE]
+            stats["embedder"] = "failed"
+            return [], stats                                  # events and the card can still answer
+        raw = await self.storage.search_embeddings_teams(vec, self.cfg.embed_model, list(teams), TOP_K)
+        stats["hits_raw"], stats["best_score"] = len(raw), (raw[0]["score"] if raw else None)
+        hits = [h for h in raw if h["score"] >= MIN_SCORE]
+        stats["hits_kept"] = len(hits)
         pairs = [(h["ref"]["conversation_id"], h["ref"]["message_id"]) for h in hits if h["kind"] == "message"]
         docs = sorted({h["ref"]["document_id"] for h in hits if h["kind"] == "doc_chunk"})
         msgs = await self.storage.get_messages(pairs) if pairs else {}
@@ -285,7 +293,7 @@ class ChatService:
                 out.append(Source(0, "file", tname, d.get("name") or "File", h["snippet"][:MAX_SOURCE_CHARS],
                                   [n for n in (d.get("created_by_name"), d.get("modified_by_name")) if n],
                                   item_id=have.get(("document", did)), document_id=did, link=d.get("web_url"), ref=("document", did)))
-        return out
+        return out, stats
 
     def _prompt(self, sources: list[Source], history: list[dict], q_red: str, red: Redactor) -> str:
         blocks = []
@@ -313,10 +321,10 @@ class ChatService:
         return out
 
     @staticmethod
-    def _log(sources: list[Source], started: float, refused: bool, provider: str) -> None:
+    def _log(sources: list[Source], started: float, refused: bool, provider: str, stats: dict | None = None) -> None:
         kinds = {k: sum(1 for s in sources if s.kind == k) for k in ("card", "event", "message", "file")}
-        log.info(json.dumps({"event": "chat", "context": kinds, "refused": refused, "provider": provider,
-                             "ms": round((time.monotonic() - started) * 1000)}))   # counts and timing only: never the text
+        log.info(json.dumps({"event": "chat", "context": kinds, "refused": refused, "provider": provider, **(stats or {}),
+                             "ms": round((time.monotonic() - started) * 1000)}))   # counts, scores and timing only: never the text
 
 
 def _side(v: dict | None) -> str:

@@ -358,6 +358,18 @@ async def test_nothing_the_student_wrote_or_was_told_is_logged_or_stored(chat, c
         assert all(isinstance(t, tuple) and len(t) == 2 for t in s.chat_usage)
 
 
+async def test_the_log_line_says_where_an_answer_came_from_in_numbers_only(chat, caplog):
+    await chat.api.join()
+    await corpus(chat, ("m1", "Quiz 1 on Monday in SECRETROOM."))
+    with caplog.at_level(logging.INFO):
+        await chat.ask("quiz 1 SECRETQUESTION")
+    line = next(json.loads(r.getMessage()) for r in caplog.records if r.getMessage().startswith("{") and '"event": "chat"' in r.getMessage())
+    assert set(line["context"]) == {"card", "event", "message", "file"}
+    assert line["teams"] == 1 and line["embedder"] is True and line["hits_raw"] >= 1 and line["hits_kept"] >= 1
+    assert isinstance(line["best_score"], float) and "events_scanned" in line and "events_picked" in line and line["ms"] >= 0
+    assert "SECRETROOM" not in json.dumps(line) and "SECRETQUESTION" not in json.dumps(line)
+
+
 async def test_a_left_team_is_out_of_scope(chat):
     await chat.api.join()
     await corpus(chat, ("m1", "LEFTTEAMWORD on Monday."))
