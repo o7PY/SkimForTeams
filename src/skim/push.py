@@ -43,6 +43,52 @@ def wants_alert(change: dict, event: dict, aud: dict, now: datetime) -> bool:
     return aud.get("has_reminder", False) or any(star_active(st, [event], now) for st in aud.get("stars", []))
 
 
+def wants_new_card(item: dict, events: list[dict], aud: dict, now: datetime) -> bool:
+    """A push about a NEW post or file, for one subscriber (the audience query already removed muted and departed members).
+    Not if they switched these alerts off; not for history (a card posted before they joined, or long ago: a late backfill is not
+    news); a file only when it is NEW (not renamed, moved, modified); in urgent-only mode only when the card is about an event of an
+    important type."""
+    s = user_settings.effective(aud.get("settings"))
+    if not s["new_card_alerts"]:
+        return False
+    at = item["occurred_at"]
+    if now - at > MAX_AGE:
+        return False
+    joined = aud.get("joined_at")
+    if joined is not None and at < joined:
+        return False
+    if item["kind"] == "document" and item.get("doc_event") != "created":
+        return False
+    if s["urgent_only"] and not any(e["type"] in s["important_types"] for e in events):
+        return False
+    return True
+
+
+def _when_where(event: dict) -> str:
+    """"Mon 2 Nov 10:00, LHC 104", "date to be confirmed", or "date not announced": the event as it is now."""
+    if unconfirmed(event):
+        return "date to be confirmed"
+    parts = []
+    start, a = event.get("starts_at"), anchor(event)
+    if a:
+        d = (start or a).astimezone(IST)
+        parts.append(d.strftime("%a %-d %b") + (f" {d.strftime('%H:%M')}" if start else ""))
+    if event.get("venue"):
+        parts.append(event["venue"])
+    return ", ".join(parts) or "date not announced"
+
+
+def new_card_text(item: dict, events: list[dict], team_name: str | None) -> tuple[str, str]:
+    """Course and event info only: never a person's name, never the message text (P4-D-137)."""
+    team = f" · {team_name}" if team_name else ""
+    if item["kind"] == "document":
+        return "New file", f"A file was added{team}"
+    if events:
+        more = f" (+{len(events) - 1} more)" if len(events) > 1 else ""
+        return f"New: {events[0]['title']}", f"{_when_where(events[0])}{more}{team}"
+    return "New post", f"Tap to read{team}"
+
+
 def defer_until(now: datetime, quiet: dict) -> datetime:
     """P4-D-123: a push due inside the quiet-hours window waits for its end (IST); otherwise it is due now."""
     if not quiet.get("enabled"):

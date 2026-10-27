@@ -11,12 +11,13 @@ from datetime import datetime, timedelta
 
 from ..api import user_settings
 from ..feed import CHANGE_CARD_TYPES
-from ..push import BATCH, MAX_AGE, ExpoError, defer_until, message_text, to_messages, wants_alert
+from ..push import BATCH, MAX_AGE, ExpoError, defer_until, message_text, new_card_text, to_messages, wants_alert, wants_new_card
 from ..storage.base import Storage
 from .common import JobContext
 
 log = logging.getLogger("skim.push")
 CURSOR_KEY = "push-alerts"
+CARD_CURSOR_KEY = "push-new-cards"
 ENQUEUE_LIMIT = 200
 SEND_LIMIT = 300
 RECEIPT_AGE = timedelta(minutes=15)
@@ -36,7 +37,7 @@ def _add(stats, key: str, n: int = 1) -> None:
         stats[key] += n
 
 
-async def enqueue(storage: Storage, now: datetime, stats) -> str:
+async def enqueue(storage: Storage, now: datetime, stats, covered: set | None = None) -> str:
     state = await storage.get_sync_state(CURSOR_KEY)
     last = ((state or {}).get("cursor") or {}).get("last_change_id")
     if last is None:  # first run: today's history is not news. Remember where we are and alert only about what comes next.
@@ -65,6 +66,8 @@ async def enqueue(storage: Storage, now: datetime, stats) -> str:
                 _add(stats, "push_not_wanted")
                 continue
             item = card or (await storage.latest_items_for_events(aud["user_id"], [e["id"]])).get(e["id"])
+            if covered is not None:
+                covered.add((aud["user_id"], e["id"]))   # a new-card alert about this same event must not repeat this one
             data = {"type": "sync", "event_id": e["id"], **({"item_id": item} if item else {})}
             quiet = user_settings.effective(aud["settings"])["quiet_hours"]
             queued = await storage.add_push({"user_id": aud["user_id"], "event_change_id": c["id"], "title": title, "body": body,
@@ -72,6 +75,38 @@ async def enqueue(storage: Storage, now: datetime, stats) -> str:
             _add(stats, "push_enqueued" if queued else "push_already_queued")
     await storage.put_sync_state(CURSOR_KEY, cursor={"last_change_id": max(c["id"] for c in changes)}, last_status="ok")
     return "partial" if len(changes) >= ENQUEUE_LIMIT else "ok"
+
+
+async def enqueue_cards(storage: Storage, now: datetime, stats, covered: set | None = None) -> str:
+    """New posts and files -> one alert per subscriber who wants it (P5-D-13). Like change alerts, the first run only remembers where it
+    is, so the history that already exists never alerts. A card whose event already got a change alert in this run is not repeated."""
+    state = await storage.get_sync_state(CARD_CURSOR_KEY)
+    last = ((state or {}).get("cursor") or {}).get("last_item_id")
+    if last is None:
+        await storage.put_sync_state(CARD_CURSOR_KEY, cursor={"last_item_id": await storage.max_feed_item_id()}, last_status="ok")
+        _add(stats, "push_card_cursor_initialised")
+        return "ok"
+    items = await storage.list_new_cards_after(last, ENQUEUE_LIMIT)
+    if not items:
+        return "ok"
+    events = await storage.get_events_by_ids(sorted({e for it in items for e in it["event_ids"]}))
+    team_names = {t["id"]: t.get("name") for t in await storage.list_teams()}
+    for it in items:
+        evs = [events[e] for e in it["event_ids"] if e in events]
+        title, body = new_card_text(it, evs, team_names.get(it["team_id"]))
+        for aud in await storage.new_card_audience(it["team_id"]):
+            if not wants_new_card(it, evs, aud, now):
+                _add(stats, "push_card_not_wanted")
+                continue
+            if covered and any((aud["user_id"], e["id"]) in covered for e in evs):
+                _add(stats, "push_card_covered_by_change")
+                continue
+            quiet = user_settings.effective(aud["settings"])["quiet_hours"]
+            queued = await storage.add_card_push({"user_id": aud["user_id"], "feed_item_id": it["id"], "title": title, "body": body,
+                                                  "data": {"type": "sync", "item_id": it["id"]}, "not_before": defer_until(now, quiet)})
+            _add(stats, "push_card_enqueued" if queued else "push_card_already_queued")
+    await storage.put_sync_state(CARD_CURSOR_KEY, cursor={"last_item_id": max(it["id"] for it in items)}, last_status="ok")
+    return "partial" if len(items) >= ENQUEUE_LIMIT else "ok"
 
 
 def _tickets(row: dict) -> list[list[str]]:
@@ -141,9 +176,11 @@ async def push_alerts(ctx: JobContext, team_id: str | None) -> str:
         _add(ctx.stats, "push_disabled")
         return "ok"
     now = ctx.clock()
-    a = await enqueue(ctx.storage, now, ctx.stats)
+    covered: set = set()
+    a = await enqueue(ctx.storage, now, ctx.stats, covered)
+    c = await enqueue_cards(ctx.storage, now, ctx.stats, covered)
     b = await send_due(ctx.storage, push, ctx, now)
-    return "partial" if "partial" in (a, b) else "ok"
+    return "partial" if "partial" in (a, b, c) else "ok"
 
 
 async def push_receipts(ctx: JobContext, team_id: str | None) -> str:

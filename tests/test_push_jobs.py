@@ -72,8 +72,9 @@ class Env:
 
     async def user(self, n, settings=None, device=True, muted=False, joined=True, devices=1):
         await self.store.upsert_app_user(uid(n), f"u{n}@x.com", f"U{n}", NOW)
-        if settings:
-            await self.store.set_user_settings(uid(n), settings)
+        # These tests are about CHANGE alerts; new-card alerts (tests/test_push_new_cards.py) are switched off here so a test's own
+        # posts do not add pushes. A test that wants them says so in `settings`.
+        await self.store.set_user_settings(uid(n), {"new_card_alerts": False, **(settings or {})})
         if joined:
             await self.store.add_subscription(uid(n), "T1", NOW - timedelta(days=3))
             if muted:

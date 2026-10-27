@@ -14,6 +14,7 @@ DEFAULTS: dict[str, Any] = {
     "history_limit": 50,
     "quiet_hours": {"enabled": True, "start": "23:00", "end": "07:00"},
     "urgent_only": False,
+    "new_card_alerts": True,   # a push when a new post or file arrives (P5-D-13); mute and quiet hours still apply
     "important_types": ["quiz", "exam", "assignment"],
     "reminders": {"day_before_time": "20:00", "same_day_hours": 5, "earliest": "07:00", "auto_for_important": True},
 }
@@ -78,6 +79,7 @@ SCHEMA: dict[str, Any] = {
     "history_limit": _int_between(10, 500),
     "quiet_hours": {"enabled": _bool, "start": _hhmm, "end": _hhmm},
     "urgent_only": _bool,
+    "new_card_alerts": _bool,
     "important_types": _types,
     "reminders": {"day_before_time": _hhmm, "same_day_hours": _hours, "earliest": _hhmm, "auto_for_important": _bool},
 }

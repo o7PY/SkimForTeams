@@ -275,6 +275,16 @@ class MemoryAppMixin:
                                  "sent_at": None})
         return True
 
+    async def add_card_push(self, row: dict) -> bool:
+        if any(p["user_id"] == row["user_id"] and p.get("feed_item_id") == row["feed_item_id"] for p in self.push_outbox):
+            return False
+        self._push_seq += 1
+        self.push_outbox.append({"id": self._push_seq, "user_id": row["user_id"], "event_change_id": None, "feed_item_id": row["feed_item_id"],
+                                 "title": row["title"], "body": row["body"], "data": row.get("data") or {}, "not_before": row["not_before"],
+                                 "status": row.get("status", "pending"), "ticket_id": None, "receipt_status": None, "error": row.get("error"),
+                                 "created_at": row["not_before"], "sent_at": None})
+        return True
+
     async def list_due_push(self, now: datetime, limit: int) -> list[dict]:
         rows = [dict(p) for p in self.push_outbox if p["status"] == "pending" and p["not_before"] <= now]
         return sorted(rows, key=lambda p: (p["not_before"], p["id"]))[:limit]

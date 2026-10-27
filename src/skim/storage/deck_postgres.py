@@ -195,6 +195,30 @@ class PostgresDeckMixin:
                where ec.id > $1 and ec.change_type = any($2::text[]) order by ec.id limit $3""", after_id, list(types), limit)
         return [dict(r) for r in rows]
 
+    async def max_feed_item_id(self) -> int:
+        assert self.pool
+        return await self.pool.fetchval("select coalesce(max(id), 0) from feed_items")
+
+    async def list_new_cards_after(self, after_id: int, limit: int) -> list[dict]:
+        """New message and file cards (oldest first) of live teams that are visible, with the linked events' ids and, for a file, what
+        happened to it (created, renamed, ...). Change cards are not here: their alerts come from the event change itself."""
+        assert self.pool
+        rows = await self.pool.fetch(
+            """select f.id, f.team_id, f.kind, f.occurred_at, de.event as doc_event,
+                      coalesce((select array_agg(fe.event_id order by fe.event_id) from feed_item_events fe where fe.item_id = f.id), '{}') as event_ids
+               from feed_items f join teams t on t.id = f.team_id and t.removed_at is null
+               left join document_events de on de.id = f.document_event_id
+               where f.id > $1 and f.kind in ('message', 'document') and not f.hidden order by f.id limit $2""", after_id, limit)
+        return [dict(r) for r in rows]
+
+    async def new_card_audience(self, team_id: str) -> list[dict]:
+        """Subscribers of the team who have not muted it and have not left: their settings and when they joined."""
+        assert self.pool
+        rows = await self.pool.fetch(
+            """select u.id as user_id, u.settings, s.joined_at from subscriptions s join app_users u on u.id = s.user_id
+               where s.team_id = $1 and s.left_at is null and not s.muted order by u.id""", team_id)
+        return [{"user_id": str(r["user_id"]), "settings": r["settings"] or {}, "joined_at": r["joined_at"]} for r in rows]
+
     async def alert_audience(self, team_id: str, event_id: int) -> list[dict]:
         """Subscribers of the team who have not muted it and have not left, each with their settings, their stars on cards
         about the event, and whether they hold a reminder for it (P4-D-122)."""

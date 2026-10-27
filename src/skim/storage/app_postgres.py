@@ -281,6 +281,16 @@ class PostgresAppMixin:
             row.get("status", "pending"), row.get("error"))
         return r is not None
 
+    async def add_card_push(self, row: dict) -> bool:
+        """Queue one new-card alert; False if (user, card) was already queued (never alert twice about one card)."""
+        assert self.pool
+        r = await self.pool.fetchrow(
+            """insert into push_outbox (user_id, feed_item_id, title, body, data, not_before, status, error)
+               values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (user_id, feed_item_id) where feed_item_id is not null do nothing returning id""",
+            row["user_id"], row["feed_item_id"], row["title"], row["body"], row.get("data") or {}, row["not_before"],
+            row.get("status", "pending"), row.get("error"))
+        return r is not None
+
     async def list_due_push(self, now: datetime, limit: int) -> list[dict]:
         assert self.pool
         rows = await self.pool.fetch("select * from push_outbox where status='pending' and not_before <= $1 "

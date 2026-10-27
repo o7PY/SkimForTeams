@@ -117,6 +117,26 @@ class MemoryDeckMixin:
         return {i: dict(e) for i, e in self.events.items()
                 if e["team_id"] in subs and e.get("event_date") is not None and e["event_date"] >= since_date}
 
+    async def max_feed_item_id(self) -> int:
+        return max(self.feed_items, default=0)
+
+    async def list_new_cards_after(self, after_id: int, limit: int) -> list[dict]:
+        doc_events = {de["id"]: de["event"] for de in self.document_events}
+        out = []
+        for iid in sorted(self.feed_items):
+            f = self.feed_items[iid]
+            team = self.teams.get(f["team_id"]) or {}
+            if iid <= after_id or f["kind"] not in ("message", "document") or f["hidden"] or team.get("removed_at"):
+                continue
+            out.append({"id": iid, "team_id": f["team_id"], "kind": f["kind"], "occurred_at": f["occurred_at"],
+                        "doc_event": doc_events.get(f.get("document_event_id")),
+                        "event_ids": sorted(e for i, e in self.feed_item_events if i == iid)})
+        return out[:limit]
+
+    async def new_card_audience(self, team_id: str) -> list[dict]:
+        return [{"user_id": uid, "settings": (self.app_users.get(uid) or {}).get("settings") or {}, "joined_at": s["joined_at"]}
+                for (uid, tid), s in sorted(self.subscriptions.items()) if tid == team_id and s["left_at"] is None and not s["muted"]]
+
     async def list_events_all_for_user(self, user_id: str, limit: int) -> dict[int, dict]:
         subs = self._active_teams(user_id)
         mine = [(e.get("updated_at") or 0, i) for i, e in self.events.items() if e["team_id"] in subs]
