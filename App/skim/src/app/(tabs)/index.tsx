@@ -5,11 +5,14 @@ import { RefreshControl, ScrollView, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import { makeStyles, radius, space, useTheme } from '@/constants/theme';
+import { useChatEnabled } from '@/lib/chat';
 import { useDeck, useDeckActions } from '@/lib/deck';
+import { cardTitle } from '@/lib/format';
 import { useSubscriptions } from '@/lib/queries';
 import type { Card } from '@/lib/types';
 import { AppText } from '@/ui/app-text';
 import { IconButton, PrimaryButton, TextButton } from '@/ui/buttons';
+import { ChatSheet, type ChatAnchor } from '@/ui/chat-sheet';
 import { CaughtUpArt, DeckSkeleton, ErrorState } from '@/ui/states';
 import { useToastMotion } from '@/ui/motion';
 import { NotificationsBanner } from '@/ui/notifications-banner';
@@ -23,6 +26,8 @@ export default function DeckScreen() {
   const styles = useStyles();
   const t = useTheme();
   const toastMotion = useToastMotion();
+  const chatOn = useChatEnabled();
+  const [chat, setChat] = useState<{ open: boolean; anchor: ChatAnchor | null }>({ open: false, anchor: null });
   const subs = useSubscriptions();
   const deck = useDeck();
   const actions = useDeckActions();
@@ -74,7 +79,10 @@ export default function DeckScreen() {
   const failed = deck.isError && !deck.data;
 
   return (
-    <TabScreen title="Skim" subtitle={cards.length > 0 ? `${cards.length}${deck.hasNextPage ? '+' : ''} to read` : undefined}>
+    <TabScreen
+      title="Skim"
+      subtitle={cards.length > 0 ? `${cards.length}${deck.hasNextPage ? '+' : ''} to read` : undefined}
+      headerRight={chatOn ? <IconButton icon="message-question-outline" label="Ask about your courses" onPress={() => setChat({ open: true, anchor: null })} /> : undefined}>
       <NotificationsBanner />
 
       <ScrollView
@@ -91,7 +99,8 @@ export default function DeckScreen() {
             <AppText variant="body" color={t.textSecondary} style={styles.centerText}>New posts, files and date changes from your courses will show up here.</AppText>
           </View>
         ) : (
-          <SwipeDeck cards={cards} onDismiss={onDismiss} onOpen={onOpen} handle={handle} />
+          <SwipeDeck cards={cards} onDismiss={onDismiss} onOpen={onOpen} handle={handle}
+            onAsk={chatOn ? (card) => setChat({ open: true, anchor: { id: card.id, title: cardTitle(card) } }) : undefined} />
         )}
       </ScrollView>
 
@@ -108,6 +117,7 @@ export default function DeckScreen() {
           <TextButton label="Undo" onPress={undo} />
         </Animated.View>
       ) : null}
+      {chatOn ? <ChatSheet visible={chat.open} anchor={chat.anchor} onClose={() => setChat((c) => ({ ...c, open: false }))} /> : null}
     </TabScreen>
   );
 }

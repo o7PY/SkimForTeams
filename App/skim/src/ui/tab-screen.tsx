@@ -12,7 +12,7 @@ import { OfflineBanner } from './states';
 export const TAB_BAR_ROOM = 96;
 
 /** A tab's frame: title on the left, the settings gear on the right, and the bottom room the floating tab bar needs. */
-export function TabScreen({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+export function TabScreen({ title, subtitle, headerRight, children }: { title: string; subtitle?: string; headerRight?: ReactNode; children: ReactNode }) {
   const styles = useStyles();
   const t = useTheme();
   return (
@@ -22,6 +22,7 @@ export function TabScreen({ title, subtitle, children }: { title: string; subtit
           <AppText variant="headlineLg">{title}</AppText>
           {subtitle ? <AppText variant="caption" color={t.textSecondary}>{subtitle}</AppText> : null}
         </View>
+        {headerRight}
         <IconButton icon="cog-outline" label="Settings" onPress={() => router.push('/settings')} />
       </View>
       <OfflineBanner />

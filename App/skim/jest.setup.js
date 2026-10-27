@@ -28,7 +28,7 @@ jest.mock('react-native-reanimated', () => {
     withSpring: land,
     withSequence: (...steps) => steps[steps.length - 1],
     withRepeat: (animation) => animation,
-    Easing: { out: (f) => f, quad: (v) => v },
+    Easing: { out: (f) => f, in: (f) => f, quad: (v) => v, cubic: (v) => v },
     Extrapolation: { CLAMP: 'clamp' },
     interpolate: (v, input, output) => {
       const p = Math.min(1, Math.max(0, (v - input[0]) / (input[1] - input[0])));

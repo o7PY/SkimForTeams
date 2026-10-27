@@ -94,4 +94,6 @@ export type Me = {
   name: string | null;
   created_at: string;
   settings: Record<string, unknown>;
+  /** server switches the app follows (P6A-DIFF-002): `chat` = "Ask the course" is on */
+  features?: { chat?: boolean };
 };

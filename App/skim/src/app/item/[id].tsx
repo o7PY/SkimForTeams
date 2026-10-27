@@ -10,7 +10,8 @@ import {
   absolutePresets, calendarEventFor, composeAbsolute, defaultPickerTime, fileUrl, offsetPresets, safeUrl, snoozeOptions, starLabel, tempStarOptions, upcomingEvent, type TempStar,
 } from '@/lib/actions';
 import { useAuth } from '@/lib/auth';
-import { changeSummary, formatWhen, relativeTime } from '@/lib/format';
+import { useChatEnabled } from '@/lib/chat';
+import { cardTitle, changeSummary, formatWhen, relativeTime } from '@/lib/format';
 import { isPending, recommendedAlreadySet } from '@/lib/item-cache';
 import { haptics } from '@/lib/haptics';
 import { useItemActions, type ActionResult } from '@/lib/item-actions';
@@ -18,6 +19,7 @@ import { itemOptions } from '@/lib/query-options';
 import type { Card } from '@/lib/types';
 import { AppText } from '@/ui/app-text';
 import { IconButton, PrimaryButton, SecondaryButton } from '@/ui/buttons';
+import { ChatSheet } from '@/ui/chat-sheet';
 import { DeckCard } from '@/ui/deck-card';
 import { Icon } from '@/ui/icon';
 import { RiseIn } from '@/ui/motion';
@@ -37,6 +39,8 @@ export default function Item() {
   const card = q.data;
   const actions = useItemActions(card);
   const [sheet, setSheet] = useState<SheetName>(null);
+  const chatOn = useChatEnabled();
+  const [asking, setAsking] = useState(false);
   const [toast, setToast] = useState<{ text: string; bad: boolean } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (toastTimer.current && clearTimeout(toastTimer.current)), []);
@@ -93,6 +97,7 @@ export default function Item() {
             : <OptionRow icon="star-outline" label="Star" detail="Keep it in Starred" onPress={() => { haptics.selection(); void run(actions.star(null)); }} pop />}
           <OptionRow icon="timer-star-outline" label="Temporary star…" detail="Starred for a while" onPress={() => setSheet('star')} />
           <OptionRow icon="clock-outline" label="Snooze…" detail="Bring it back later" onPress={() => setSheet('snooze')} />
+          {chatOn ? <OptionRow icon="message-question-outline" label="Ask" detail="Ask a question about this card" onPress={() => setAsking(true)} /> : null}
           {canCalendar ? <OptionRow icon="calendar-plus" label="Add to calendar" onPress={() => run(actions.addToCalendar().then((r) => r.result))} /> : null}
           {teams ? <OptionRow icon="microsoft-teams" label="Open in Teams" detail="The original message" onPress={() => run(actions.openTeams())} /> : null}
           {file ? <OptionRow icon="file-outline" label="Open file" onPress={() => run(actions.openFile())} /> : null}
@@ -144,6 +149,7 @@ export default function Item() {
 
       </RiseIn>
 
+      {chatOn ? <ChatSheet visible={asking} anchor={{ id: card.id, title: cardTitle(card) }} onClose={() => setAsking(false)} /> : null}
       <RemindSheet visible={sheet === 'remind'} card={card} now={now} onClose={() => setSheet(null)}
         onBefore={(m) => { setSheet(null); void run(actions.remindBefore(m)); }} onAt={(iso) => { setSheet(null); void run(actions.remindAt(iso)); }} />
       <TempStarSheet visible={sheet === 'star'} card={card} now={now} onClose={() => setSheet(null)} onPick={(t) => { setSheet(null); haptics.selection(); void run(actions.star(t)); }} />
