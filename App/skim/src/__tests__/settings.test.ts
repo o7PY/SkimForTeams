@@ -129,3 +129,14 @@ describe('list edits while changes are still in the outbox', () => {
     expect([...unstarredByPendingOps(ops)]).toEqual([7]);
   });
 });
+
+describe('new-card alerts', () => {
+  test('on by default, and the setting is read, defaulted and patched like the others', () => {
+    expect(DEFAULTS.new_card_alerts).toBe(true);
+    expect(parseSettings({}).new_card_alerts).toBe(true);
+    expect(parseSettings({ new_card_alerts: false }).new_card_alerts).toBe(false);
+    expect(parseSettings({ new_card_alerts: 'no' }).new_card_alerts).toBe(true);        // an odd value falls back to the default
+    expect(applyPatch(DEFAULTS, { new_card_alerts: false }).new_card_alerts).toBe(false);
+    expect(applyPatch(DEFAULTS, { urgent_only: true }).new_card_alerts).toBe(true);     // other settings do not touch it
+  });
+});

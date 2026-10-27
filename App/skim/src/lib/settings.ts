@@ -10,6 +10,7 @@ export type Settings = {
   history_limit: number;
   quiet_hours: { enabled: boolean; start: string; end: string };
   urgent_only: boolean;
+  new_card_alerts: boolean; // a push when a new post or file arrives in a course (mute and quiet hours still apply)
   important_types: string[];
   reminders: { day_before_time: string; same_day_hours: number; earliest: string; auto_for_important: boolean };
 };
@@ -20,6 +21,7 @@ export const DEFAULTS: Settings = {
   history_limit: 50,
   quiet_hours: { enabled: true, start: '23:00', end: '07:00' },
   urgent_only: false,
+  new_card_alerts: true,
   important_types: ['quiz', 'exam', 'assignment'],
   reminders: { day_before_time: '20:00', same_day_hours: 5, earliest: '07:00', auto_for_important: true },
 };
@@ -47,6 +49,7 @@ export function parseSettings(raw: unknown): Settings {
     history_limit: hist,
     quiet_hours: { enabled: bool(q.enabled, DEFAULTS.quiet_hours.enabled), start: hhmm(q.start, DEFAULTS.quiet_hours.start), end: hhmm(q.end, DEFAULTS.quiet_hours.end) },
     urgent_only: bool(r.urgent_only, DEFAULTS.urgent_only),
+    new_card_alerts: bool(r.new_card_alerts, DEFAULTS.new_card_alerts),
     important_types: [...types],
     reminders: {
       day_before_time: hhmm(m.day_before_time, DEFAULTS.reminders.day_before_time), same_day_hours: hours,

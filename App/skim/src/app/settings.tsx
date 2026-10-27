@@ -115,6 +115,7 @@ export default function Settings() {
         ) : exact === 'granted' ? (
           <OptionRow icon="alarm-check" label="Reminders arrive on time" detail="Alarms & reminders is allowed" onPress={() => undefined} />
         ) : null}
+        <SwitchRow label="New posts and files" detail="A notification when something new arrives in a course, even when the app is closed" value={settings.new_card_alerts} onChange={(v) => void update({ new_card_alerts: v })} />
         <SwitchRow label="Urgent only" detail="Alerts only for the kinds you marked Important" value={settings.urgent_only} onChange={(v) => void update({ urgent_only: v })} />
         <SwitchRow label="Quiet hours" detail={q.enabled ? `No alerts from ${quietWindow(q)}; they wait until morning` : 'Alerts can arrive at any hour'} value={q.enabled} onChange={(v) => void update({ quiet_hours: { enabled: v } })} />
         {q.enabled ? (
