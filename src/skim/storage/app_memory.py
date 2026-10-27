@@ -207,6 +207,13 @@ class MemoryAppMixin:
             "deleted_at": at, "created_at": at, "updated_at": at}
         return True
 
+    async def restore_reminder(self, user_id: str, reminder_id: str, at: datetime) -> bool:
+        cur = self.reminders.get(reminder_id)
+        if cur is None or cur["user_id"] != user_id:
+            return False
+        cur["deleted_at"], cur["updated_at"] = None, at
+        return True
+
     async def get_reminder(self, user_id: str, reminder_id: str) -> dict | None:
         r = self.reminders.get(reminder_id)
         return dict(r) if r and r["user_id"] == user_id else None

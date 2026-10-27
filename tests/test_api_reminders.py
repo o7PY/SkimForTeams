@@ -276,3 +276,110 @@ async def test_a_users_put_cannot_overwrite_another_users_row_by_reusing_its_id(
     assert (await api.call("PUT", f"/reminders/{rid}", "b", json={"recommended": True, "item_id": item}))[0] == 404
     assert (await api.store.get_reminder(A, rid))["offset_minutes"] == -30
     assert await api.store.get_reminder(B, rid) is None
+
+
+# ---------------------------------------------------------------- the Reminders list: switch off / on without losing it
+async def all_of(api, user="a", **q):
+    st, b = await api.call("GET", "/reminders/all", user, params=q)
+    assert st == 200, b
+    return b["reminders"]
+
+
+async def test_the_list_shows_every_reminder_and_a_switched_off_one_stays_listed_but_is_not_scheduled(api):
+    item, eid = await quiz_card(api)
+    await api.call("PATCH", "/me/settings", json={"reminders": {"auto_for_important": False}})   # isolate the recommended pair
+    rid = NEW()
+    await api.call("PUT", f"/reminders/{rid}", json={"recommended": True, "item_id": item})
+    first = await all_of(api)
+    assert [(r["kind"], r["enabled"], r["fire_at"]) for r in first] == [
+        ("recommended_day_before", True, "2026-11-01T20:00:00+05:30"), ("recommended_same_day", True, "2026-11-02T07:00:00+05:30")]
+    assert first[0]["title"] == "Quiz 1" and first[0]["item_id"] == item
+    st, b = await api.call("PATCH", f"/reminders/{rid}", json={"enabled": False})
+    assert st == 200 and b == {"ok": True, "id": rid, "enabled": False}
+    listed = await all_of(api)
+    assert [(r["kind"], r["enabled"], r["fire_at"]) for r in listed] == [                # still there, with the time it would fire
+        ("recommended_day_before", False, "2026-11-01T20:00:00+05:30"), ("recommended_same_day", True, "2026-11-02T07:00:00+05:30")]
+    assert [r["kind"] for r in await reminders(api)] == ["recommended_same_day"]          # the phone does not schedule it
+    st, b = await api.call("PATCH", f"/reminders/{rid}", json={"enabled": True})
+    assert st == 200 and b["enabled"] is True
+    assert [(r["kind"], r["enabled"]) for r in await all_of(api)] == [("recommended_day_before", True), ("recommended_same_day", True)]
+    assert len(await reminders(api)) == 2                                                  # back in the schedule
+    assert (await api.call("PATCH", f"/reminders/{rid}", json={"enabled": True}))[0] == 200   # idempotent
+
+
+async def test_an_automatic_reminder_that_was_never_stored_can_be_switched_off_and_on(api):
+    await quiz_card(api)
+    got = await reminders(api)
+    vid = got[0]["id"]
+    assert got[0]["virtual"] is True
+    assert (await api.call("PATCH", f"/reminders/{vid}", json={"enabled": True}))[0] == 200     # already on: fine
+    assert (await api.call("PATCH", f"/reminders/{vid}", json={"enabled": False}))[0] == 200
+    listed = {r["id"]: r for r in await all_of(api)}
+    assert listed[vid]["enabled"] is False and listed[vid]["fire_at"] == "2026-11-01T20:00:00+05:30"
+    assert vid not in {r["id"] for r in await reminders(api)}
+    assert (await api.call("PATCH", f"/reminders/{vid}", json={"enabled": True}))[0] == 200
+    assert vid in {r["id"] for r in await reminders(api)}
+
+
+async def test_a_manual_reminder_keeps_its_own_time_through_off_and_on(api):
+    item, eid = await quiz_card(api)
+    rid = NEW()
+    fire = (NOW + timedelta(days=3)).isoformat()
+    assert (await api.call("PUT", f"/reminders/{rid}", json={"kind": "manual", "item_id": item, "fire_at": fire}))[0] == 200
+    assert (await api.call("PATCH", f"/reminders/{rid}", json={"enabled": False}))[0] == 200
+    mine = {r["id"]: r for r in await all_of(api)}[rid]
+    assert mine["enabled"] is False and mine["kind"] == "manual" and mine["fire_at"][:16] == (NOW + timedelta(days=3)).astimezone(R.IST).isoformat()[:16]
+    await api.call("PATCH", f"/reminders/{rid}", json={"enabled": True})
+    assert {r["id"]: r for r in await all_of(api)}[rid]["enabled"] is True
+
+
+async def test_the_list_respects_days_and_validates_and_needs_a_token(api):
+    await quiz_card(api)
+    assert (await api.call("GET", "/reminders/all", params={"days": 0}))[0] == 400
+    assert (await api.call("GET", "/reminders/all", params={"days": 91}))[0] == 400
+    assert await all_of(api, days=1) == []                                                 # the quiz is 6 days away
+    assert len(await all_of(api, days=10)) == 2
+    r = await api.client.get("/api/v1/reminders/all")
+    assert r.status == 401
+    r = await api.client.patch(f"/api/v1/reminders/{NEW()}", json={"enabled": True})
+    assert r.status == 401
+
+
+@pytest.mark.parametrize("body", [None, {}, {"enabled": "yes"}, {"enabled": 1}, {"enabled": True, "x": 1}, []])
+async def test_patch_validation(api, body):
+    await quiz_card(api)
+    rid = (await reminders(api))[0]["id"]
+    st, _ = await api.call("PATCH", f"/reminders/{rid}", **({} if body is None else {"json": body}))
+    assert st == 400
+
+
+async def test_patch_unknown_and_another_users_reminder_is_404_and_changes_nothing(api):
+    item, eid = await quiz_card(api)
+    rid = NEW()
+    await api.call("PUT", f"/reminders/{rid}", json={"recommended": True, "item_id": item})
+    assert (await api.call("PATCH", f"/reminders/{NEW()}", json={"enabled": False}))[0] == 404
+    assert (await api.call("PATCH", "/reminders/not-a-uuid", json={"enabled": False}))[0] == 404
+    await api.join("b")
+    assert (await api.call("PATCH", f"/reminders/{rid}", "b", json={"enabled": False}))[0] == 404     # b cannot touch a's
+    assert (await api.call("PATCH", f"/reminders/{rid}", "b", json={"enabled": True}))[0] == 404
+    assert [r["enabled"] for r in await all_of(api)] == [True, True]
+    assert await all_of(api, "b") == [] or all(r["id"] != rid for r in await all_of(api, "b"))
+
+
+async def test_a_cancelled_event_s_reminders_are_not_listed_even_when_switched_off(api):
+    item, eid = await quiz_card(api)
+    rid = NEW()
+    await api.call("PUT", f"/reminders/{rid}", json={"recommended": True, "item_id": item})
+    await api.call("PATCH", f"/reminders/{rid}", json={"enabled": False})
+    await set_event(api, eid, status="cancelled")
+    assert await all_of(api) == []
+
+
+async def test_switching_off_a_recommended_reminder_lets_the_automatic_one_for_an_important_event_show_in_its_place(api):
+    """Existing engine rule (P4-D-117): an automatic reminder is only hidden while the user already has one at that very time."""
+    item, eid = await quiz_card(api)
+    rid = NEW()
+    await api.call("PUT", f"/reminders/{rid}", json={"recommended": True, "item_id": item})
+    await api.call("PATCH", f"/reminders/{rid}", json={"enabled": False})
+    kinds = {(r["kind"], r["enabled"]) for r in await all_of(api)}
+    assert ("recommended_day_before", False) in kinds and ("auto_day_before", True) in kinds

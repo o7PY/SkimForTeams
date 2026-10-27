@@ -214,6 +214,13 @@ class PostgresAppMixin:
             reminder.get("offset_minutes"), reminder.get("fire_at"), at)
         return tag.endswith(" 1")
 
+    async def restore_reminder(self, user_id: str, reminder_id: str, at: datetime) -> bool:
+        """Switch a deleted reminder back on (it keeps its kind, offset or time, card and event). True if it is now on."""
+        assert self.pool
+        row = await self.pool.fetchrow(
+            "update reminders set deleted_at=null, updated_at=$3 where id=$1 and user_id=$2 returning 1", reminder_id, user_id, at)
+        return row is not None
+
     async def get_reminder(self, user_id: str, reminder_id: str) -> dict | None:
         assert self.pool
         return _d(await self.pool.fetchrow("select * from reminders where id=$1 and user_id=$2", reminder_id, user_id))

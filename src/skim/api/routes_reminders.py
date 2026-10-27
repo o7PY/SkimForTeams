@@ -156,26 +156,68 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
             return web.json_response({"reminders": [shown[i] for i, _ in pair]})
         return web.json_response({"reminder": shown.get(rid) or {"id": rid, "kind": kind, "item_id": item_id, "fire_at": None}})
 
+    async def switch_off(uid: str, rid: str, t: datetime) -> bool:
+        """Tombstone a reminder (stored, or an automatic one that was never stored). False = no such reminder of this user's."""
+        row = await storage.get_reminder(uid, rid)
+        if row is not None:
+            return row["deleted_at"] is not None or await storage.tombstone_reminder(uid, row, t)
+        hit = engine.virtual_catalog(uid, await user_events(uid), id_secret).get(rid)
+        if hit is None:
+            return False
+        eid, kind = hit  # an automatic reminder that was never stored: a tombstone keeps it from coming back
+        newest = await storage.latest_items_for_events(uid, [eid])
+        return await storage.tombstone_reminder(uid, {"id": rid, "item_id": newest.get(eid), "event_id": eid, "kind": kind}, t)
+
     async def delete_reminder(request: web.Request) -> web.Response:
         uid = request[user_key]["id"]
         rid = _uuid(request.match_info["id"])
+        if rid is None or not await switch_off(uid, rid, now()):
+            return err(404, "not found")  # also when the id is someone else's: never answer "deleted" when nothing was
+        return web.Response(status=204)
+
+    async def patch_reminder(request: web.Request) -> web.Response:
+        """Switch one reminder off or on without losing it (the Reminders list). Off = the delete above; on = clear that tombstone."""
+        uid = request[user_key]["id"]
+        rid = _uuid(request.match_info["id"])
+        b = await body(request)
         if rid is None:
             return err(404, "not found")
+        if not b or set(b) != {"enabled"} or not isinstance(b["enabled"], bool):
+            return err(400, "body must be {\"enabled\": true|false}")
         t = now()
-        row = await storage.get_reminder(uid, rid)
-        if row is not None:
-            if row["deleted_at"] is None and not await storage.tombstone_reminder(uid, row, t):
+        if not b["enabled"]:
+            if not await switch_off(uid, rid, t):
                 return err(404, "not found")
-            return web.Response(status=204)
-        events = await user_events(uid)
-        hit = engine.virtual_catalog(uid, events, id_secret).get(rid)
-        if hit is None:
-            return err(404, "not found")
-        eid, kind = hit  # an automatic reminder that was never stored: a tombstone keeps it from coming back
-        newest = await storage.latest_items_for_events(uid, [eid])
-        if not await storage.tombstone_reminder(uid, {"id": rid, "item_id": newest.get(eid), "event_id": eid, "kind": kind}, t):
-            return err(404, "not found")  # the id is taken by someone else's row: never answer "deleted" when nothing was
-        return web.Response(status=204)
+        else:
+            row = await storage.get_reminder(uid, rid)
+            if row is None:
+                if rid not in engine.virtual_catalog(uid, await user_events(uid), id_secret):
+                    return err(404, "not found")   # an automatic reminder that was never stored is already on
+            elif row["deleted_at"] is not None and not await storage.restore_reminder(uid, rid, t):
+                return err(404, "not found")
+        return web.json_response({"ok": True, "id": rid, "enabled": b["enabled"]})
+
+    async def all_reminders(request: web.Request) -> web.Response:
+        """Every reminder in the next `days`, switched on AND switched off, soonest first (the Reminders list in the app).
+        This is a list to manage; what the phone schedules is still GET /reminders (switched-off ones never appear there)."""
+        uid = request[user_key]["id"]
+        days = 60
+        if "days" in request.query:
+            raw = request.query["days"]
+            if not raw.isdigit() or not 1 <= int(raw) <= 90:
+                return err(400, "days must be 1 to 90")
+            days = int(raw)
+        sched, events, settings, rows = await computed(uid, days, cap=10_000)
+        on = await titled(uid, sched, events, settings)
+        off: list[dict] = []
+        tombs = [dict(r, deleted_at=None) for r in rows if r.get("deleted_at") is not None]
+        if tombs:   # what each switched-off reminder would do if it were on
+            newest = await storage.latest_items_for_events(uid, list(events)) if events else {}
+            ids = {r["id"] for r in tombs}
+            again = engine.compute(uid, tombs, events, settings, now(), item_for_event=newest.get, days=days, cap=10_000, secret=id_secret)
+            off = await titled(uid, [s for s in again if s.id in ids], events, settings)
+        out = sorted([{**i, "enabled": True} for i in on] + [{**i, "enabled": False} for i in off], key=lambda i: (i["fire_at"], i["id"]))
+        return web.json_response({"reminders": out, "computed_at": cards.iso(now())})
 
     async def reminders_etag(uid: str) -> str:
         """Same value GET /reminders returns, without building the notification texts (for /sync)."""
@@ -183,7 +225,9 @@ def add_routes(sub: web.Application, storage: Storage, user_key: web.RequestKey,
         return etag([{"id": x.id, "fire_at": cards.iso(x.fire_at)} for x in sched])
 
     sub.router.add_get("/reminders", get_reminders)
+    sub.router.add_get("/reminders/all", all_reminders)
     sub.router.add_put("/reminders/{id}", put_reminder)
+    sub.router.add_patch("/reminders/{id}", patch_reminder)
     sub.router.add_delete("/reminders/{id}", delete_reminder)
     return reminders_etag
 
