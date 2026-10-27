@@ -1,0 +1,5 @@
+id,question,anchor_text,expected_source,expected_fact,forbid,expect_refusal,notes
+1,When is Quiz 1?,,Quiz 1,Nov,,n,EDIT the expected facts to match your test team's current data before a live run (the Phase 4 acceptance moved Quiz 1 several times)
+2,Where is Quiz 1?,,Quiz 1,LHC 104,,n,
+3,Has Quiz 1 changed?,Quiz 1,Quiz 1,moved|changed|rescheduled,,n,Anchored to the Quiz 1 card
+4,What is the airspeed velocity of an unladen swallow?,,,,,y,Out of scope: must refuse

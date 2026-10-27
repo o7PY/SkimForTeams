@@ -141,6 +141,35 @@ class PostgresDeckMixin:
                where e.event_date >= $2::date""", user_id, since_date)
         return {r["id"]: dict(r) for r in rows}
 
+    async def list_events_all_for_user(self, user_id: str, limit: int) -> dict[int, dict]:
+        """Events of the user's active teams, any date, the most recently updated first (Ask the course picks the relevant ones)."""
+        assert self.pool
+        rows = await self.pool.fetch(
+            """select e.* from events e join subscriptions s on s.team_id = e.team_id and s.user_id = $1 and s.left_at is null
+               order by e.updated_at desc, e.id desc limit $2""", user_id, limit)
+        return {r["id"]: dict(r) for r in rows}
+
+    async def find_feed_items(self, messages: list[tuple[str, str]], document_ids: list[int]) -> dict[tuple, int]:
+        """{("message", conversation_id, message_id): card id, ("document", document_id): newest card id} for the sources that have
+        a visible card (so an answer's citation can open it). Scoping is the caller's job: it only asks about sources it found
+        inside the student's own teams."""
+        assert self.pool
+        out: dict[tuple, int] = {}
+        if messages:
+            rows = await self.pool.fetch(
+                """select f.id, f.conversation_id, f.message_id from feed_items f
+                   join unnest($1::text[], $2::text[]) as p(c, i) on f.conversation_id = p.c and f.message_id = p.i
+                   where f.kind = 'message' and not f.hidden""", [m[0] for m in messages], [m[1] for m in messages])
+            out.update({("message", r["conversation_id"], r["message_id"]): r["id"] for r in rows})
+        if document_ids:
+            rows = await self.pool.fetch(
+                """select distinct on (de.document_id) de.document_id, f.id from feed_items f
+                   join document_events de on de.id = f.document_event_id
+                   where f.kind = 'document' and not f.hidden and de.document_id = any($1::bigint[])
+                   order by de.document_id, f.occurred_at desc, f.id desc""", document_ids)
+            out.update({("document", r["document_id"]): r["id"] for r in rows})
+        return out
+
     async def latest_items_for_events(self, user_id: str, event_ids: list[int]) -> dict[int, int]:
         """{event id: the newest visible card the user can open that is linked to it} (what a reminder opens)."""
         assert self.pool

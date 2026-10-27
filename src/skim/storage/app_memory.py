@@ -1,7 +1,7 @@
 """Phase 4 storage for MemoryStorage (student-app tables). See app_postgres.py for the SQL twin."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from .app_postgres import FEED_COLS
@@ -17,6 +17,7 @@ class MemoryAppMixin:
         self.user_item_state: dict[tuple[str, int], dict] = {}
         self.stars: dict[tuple[str, int], dict] = {}
         self.reminders: dict[str, dict] = {}
+        self.chat_usage: list[tuple[str, datetime]] = []   # (user id, time) of each accepted Ask-the-course question
         self.devices: dict[str, dict] = {}  # by token
         self.push_outbox: list[dict] = []
         self.auth_deleted: set[str] = set()  # stands in for deleted rows of Supabase's auth.users
@@ -53,6 +54,7 @@ class MemoryAppMixin:
                 del table[k]
         self.join_attempts = [a for a in self.join_attempts if a["user_id"] != user_id]
         self.reminders = {k: v for k, v in self.reminders.items() if v["user_id"] != user_id}
+        self.chat_usage = [(u, t) for u, t in self.chat_usage if u != user_id]
         self.devices = {k: v for k, v in self.devices.items() if v["user_id"] != user_id}
         self.push_outbox = [p for p in self.push_outbox if p["user_id"] != user_id]
         return True
@@ -206,6 +208,13 @@ class MemoryAppMixin:
             "kind": reminder["kind"], "offset_minutes": reminder.get("offset_minutes"), "fire_at": reminder.get("fire_at"),
             "deleted_at": at, "created_at": at, "updated_at": at}
         return True
+
+    async def record_chat_use(self, user_id: str, at: datetime) -> None:
+        self.chat_usage.append((user_id, at))
+        self.chat_usage[:] = [(u, t) for u, t in self.chat_usage if not (u == user_id and t < at - timedelta(days=3))]
+
+    async def count_chat_uses(self, user_id: str, since: datetime) -> int:
+        return sum(1 for u, t in self.chat_usage if u == user_id and t > since)
 
     async def restore_reminder(self, user_id: str, reminder_id: str, at: datetime) -> bool:
         cur = self.reminders.get(reminder_id)

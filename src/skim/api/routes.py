@@ -10,7 +10,8 @@ from typing import Callable
 from aiohttp import web
 
 from ..storage.base import Storage
-from . import routes_devices, routes_items, routes_reminders, user_settings
+from .chat import ChatService
+from . import routes_chat, routes_devices, routes_items, routes_reminders, user_settings
 from .auth import AuthError, TokenVerifier
 
 log = logging.getLogger("skim.api")
@@ -71,7 +72,7 @@ async def _json(request: web.Request):
 
 def register(app: web.Application, storage: Storage, verifier: TokenVerifier, clock: Callable[[], float] = time.monotonic,
              now: Callable[[], datetime] = _now, staff_aad_ids: frozenset[str] = frozenset(),
-             id_secret: str = "") -> web.Application:
+             id_secret: str = "", chat: ChatService | None = None) -> web.Application:
     if not id_secret:
         raise ValueError("id_secret is required (reminder ids are derived from it)")
     seen: dict[str, float] = {}
@@ -79,7 +80,8 @@ def register(app: web.Application, storage: Storage, verifier: TokenVerifier, cl
 
     def profile(u: dict) -> dict:
         return {"id": u["id"], "email": u["email"], "name": u["name"], "created_at": u["created_at"].isoformat(),
-                "settings": user_settings.effective(u["settings"])}
+                "settings": user_settings.effective(u["settings"]),
+                "features": {"chat": chat is not None}}   # P6A-DIFF-002: lets the app hide "Ask the course" when it is off
 
     async def me(request: web.Request) -> web.Response:
         u = await storage.get_app_user(request[USER]["id"])
@@ -113,5 +115,6 @@ def register(app: web.Application, storage: Storage, verifier: TokenVerifier, cl
     routes_items.add_routes(sub, storage, USER, now, frozenset(staff_aad_ids), id_secret)
     etag = routes_reminders.add_routes(sub, storage, USER, now, id_secret)
     routes_devices.add_routes(sub, storage, USER, now, etag)
+    routes_chat.add_routes(sub, storage, USER, now, chat)
     app.add_subapp("/api/v1", sub)
     return sub

@@ -1,7 +1,7 @@
 """Phase 4 storage for PostgresStorage (twin of app_memory.py). Student-app tables only; see migration 008."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 REMINDER_FIELDS = {"item_id", "event_id", "kind", "offset_minutes", "fire_at"}
@@ -213,6 +213,16 @@ class PostgresAppMixin:
             reminder["id"], user_id, reminder.get("item_id"), reminder.get("event_id"), reminder["kind"],
             reminder.get("offset_minutes"), reminder.get("fire_at"), at)
         return tag.endswith(" 1")
+
+    # --- Ask the course: the rate limit (the time of each accepted question, never its text) ---
+    async def record_chat_use(self, user_id: str, at: datetime) -> None:
+        assert self.pool
+        await self.pool.execute("insert into chat_usage (user_id, at) values ($1, $2)", user_id, at)
+        await self.pool.execute("delete from chat_usage where user_id = $1 and at < $2", user_id, at - timedelta(days=3))
+
+    async def count_chat_uses(self, user_id: str, since: datetime) -> int:
+        assert self.pool
+        return await self.pool.fetchval("select count(*) from chat_usage where user_id = $1 and at > $2", user_id, since)
 
     async def restore_reminder(self, user_id: str, reminder_id: str, at: datetime) -> bool:
         """Switch a deleted reminder back on (it keeps its kind, offset or time, card and event). True if it is now on."""

@@ -19,6 +19,7 @@ from .schema import schema_status
 from .graph.auth import MsalTokenProvider
 from .graph.client import GraphClient
 from .ai.services import AIServices
+from .api.chat import ChatService
 from .jobs.push_alerts import PushService
 from .jobs.runner import JobRunner
 from .push import ExpoClient
@@ -94,8 +95,16 @@ def create_app(settings: Settings, storage: Storage | None = None, sender: Sende
 
     if settings.api_enabled:  # Phase 4: student app API (P4-D-104); absent (plain 404) otherwise
         assert settings.supabase_url
+        chat = None
+        if settings.chat_enabled:   # P6A-D-001: needs the AI layer and a usable embedder; otherwise POST /chat answers 503
+            if ai is not None and ai.embedder is not None and ai.embedder.usable:
+                chat = ChatService(storage, ai.router, ai.embedder, ai.cfg, staff_ids=settings.staff_aad_ids, id_secret=settings.pairing_secret)
+            else:
+                log.warning("Ask the course is off: CHAT_ENABLED needs AI_ENABLED, its keys and a 768-dimension embedder")
+        else:
+            log.info("Ask the course disabled: CHAT_ENABLED is not set")
         api_routes.register(app, storage, verifier or TokenVerifier(settings.supabase_url, settings.supabase_jwt_secret),
-                            staff_aad_ids=settings.staff_aad_ids, id_secret=settings.pairing_secret)
+                            staff_aad_ids=settings.staff_aad_ids, id_secret=settings.pairing_secret, chat=chat)
     else:
         log.info("Phase 4 API disabled: API_ENABLED is not set")
 

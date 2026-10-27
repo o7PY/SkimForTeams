@@ -43,6 +43,7 @@ class Settings:
     staff_aad_ids: frozenset[str] = frozenset()   # STAFF_AAD_IDS, shared with Phase 3 (P4-D-135)
     feed_lookback_days: int = 30
     push_enabled: bool = False                    # P4-D-121: change alerts through Expo; off unless PUSH_ENABLED
+    chat_enabled: bool = False                    # P6A-D-001: "Ask the course"; off unless CHAT_ENABLED (also needs API_ENABLED and AI_ENABLED)
     expo_access_token: str | None = field(default=None, repr=False)
     expo_push_url: str = "https://exp.host/--/api/v2/push"
     # Passed to the SDK's MsalConnectionManager / AgentApplication.
@@ -126,6 +127,7 @@ class Settings:
             staff_aad_ids=frozenset(x.strip() for x in (env.get("STAFF_AAD_IDS") or "").split(",") if x.strip()),
             feed_lookback_days=feed_lookback,
             push_enabled=_flag(env, "PUSH_ENABLED", False),
+            chat_enabled=_flag(env, "CHAT_ENABLED", False),
             expo_access_token=env.get("EXPO_ACCESS_TOKEN") or None,
             expo_push_url=(env.get("EXPO_PUSH_URL") or "https://exp.host/--/api/v2/push").rstrip("/"),
             api_enabled=api_enabled,

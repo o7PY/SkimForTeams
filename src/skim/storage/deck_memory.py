@@ -117,6 +117,29 @@ class MemoryDeckMixin:
         return {i: dict(e) for i, e in self.events.items()
                 if e["team_id"] in subs and e.get("event_date") is not None and e["event_date"] >= since_date}
 
+    async def list_events_all_for_user(self, user_id: str, limit: int) -> dict[int, dict]:
+        subs = self._active_teams(user_id)
+        mine = [(e.get("updated_at") or 0, i) for i, e in self.events.items() if e["team_id"] in subs]
+        top = sorted(mine, key=lambda k: (str(k[0]), k[1]), reverse=True)[:limit]
+        return {i: dict(self.events[i]) for _, i in top}
+
+    async def find_feed_items(self, messages: list[tuple[str, str]], document_ids: list[int]) -> dict[tuple, int]:
+        out: dict[tuple, int] = {}
+        wanted = set(messages)
+        doc_events = {de["id"]: de["document_id"] for de in self.document_events}
+        best: dict[int, tuple] = {}
+        for iid, f in self.feed_items.items():
+            if f["hidden"]:
+                continue
+            if f["kind"] == "message" and (f.get("conversation_id"), f.get("message_id")) in wanted:
+                out[("message", f["conversation_id"], f["message_id"])] = iid
+            elif f["kind"] == "document" and doc_events.get(f.get("document_event_id")) in document_ids:
+                doc = doc_events[f["document_event_id"]]
+                if doc not in best or (f["occurred_at"], iid) > best[doc]:
+                    best[doc] = (f["occurred_at"], iid)
+        out.update({("document", d): k[1] for d, k in best.items()})
+        return out
+
     async def latest_items_for_events(self, user_id: str, event_ids: list[int]) -> dict[int, int]:
         subs = self._active_teams(user_id)
         best: dict[int, tuple] = {}

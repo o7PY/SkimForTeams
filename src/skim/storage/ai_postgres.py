@@ -256,6 +256,15 @@ class PostgresAIMixin:
         return [{"kind": r["kind"], "ref": r["ref"], "team_id": r["team_id"], "score": round(float(r["score"]), 4),
                  "snippet": (r["snippet"] or "")[:300]} for r in rows]
 
+    async def search_embeddings_teams(self, vector: list[float], model: str, team_ids: list[str], k: int) -> list[dict]:
+        """Top-k over messages and file chunks of ANY of `team_ids` (the Ask-the-course scope: one student's active teams)."""
+        assert self.pool
+        if not team_ids:
+            return []
+        rows = await self.pool.fetch(_SEARCH_TEAMS_SQL, _vec(vector), model, team_ids, k)
+        return [{"kind": r["kind"], "ref": r["ref"], "team_id": r["team_id"], "score": round(float(r["score"]), 4),
+                 "snippet": (r["snippet"] or "")[:1500]} for r in rows]
+
     async def count_embeddings(self, model: str) -> int:
         assert self.pool
         return await self.pool.fetchval("select count(*) from embeddings where model=$1", model)
@@ -340,3 +349,7 @@ select * from (
   join teams t on t.id = d.team_id and t.removed_at is null
   where e.kind = 'doc_chunk' and e.model = $2 and ($3::text is null or d.team_id = $3)
 ) s order by score desc limit $4"""
+
+# Same query, filtered to a set of teams instead of one (PHASE6A): `$3` is a text[] and each branch tests membership in it.
+_SEARCH_TEAMS_SQL = (_SEARCH_SQL.replace("($3::text is null or c.team_id = $3)", "c.team_id = any($3::text[])")
+                     .replace("($3::text is null or d.team_id = $3)", "d.team_id = any($3::text[])"))

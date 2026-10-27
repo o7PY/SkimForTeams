@@ -36,6 +36,10 @@ class Redactor:
                 out.setdefault(part, n)
         return dict(sorted(out.items(), key=lambda kv: len(kv[0]), reverse=True))
 
+    def add_names(self, names: list[str]) -> None:
+        """Teach this redactor more names (a source's author, say) so one request shares one set of placeholders."""
+        self._names = dict(sorted({**self._names, **self._name_variants(names)}.items(), key=lambda kv: len(kv[0]), reverse=True))
+
     def _ph(self, kind: str, original: str) -> str:
         key = f"{kind}:{original.casefold()}"
         if key not in self._forward:

@@ -252,6 +252,21 @@ class MemoryAIMixin:
                 n += 1
         return n
 
+    async def search_embeddings_teams(self, vector: list[float], model: str, team_ids: list[str], k: int) -> list[dict]:
+        wanted = set(team_ids)
+        hits = [h for h in await self.search_embeddings(vector, model, None, 10**9) if h["team_id"] in wanted]
+        for h in hits:   # the single-team search shortens snippets for logs; here the full text is wanted
+            h["snippet"] = self._full_snippet(h)
+        return hits[:k]
+
+    def _full_snippet(self, h: dict) -> str:
+        ref = h["ref"]
+        if h["kind"] == "message":
+            m = self.messages.get((ref["conversation_id"], ref["message_id"])) or {}
+            return ((m.get("subject") + "\n") if m.get("subject") else "") + (m.get("text") or "")
+        c = next((c for c in self.doc_chunks.get(ref["document_id"], []) if c["chunk_index"] == ref["chunk_index"]), None)
+        return (c or {}).get("text", "")
+
     async def search_embeddings(self, vector: list[float], model: str, team_id: str | None, k: int) -> list[dict]:
         import math
 

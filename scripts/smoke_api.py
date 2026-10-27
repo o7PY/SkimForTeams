@@ -49,6 +49,8 @@ def main() -> int:
     ap.add_argument("--base", default=os.environ.get("BASE_URL"), help="https://<cloud run service url>")
     ap.add_argument("--token-prompt", action="store_true", help="ask for a Supabase access token (hidden) and run the signed-in checks")
     ap.add_argument("--join", metavar="CODE", help="also join the team with this pairing code (the only write)")
+    ap.add_argument("--chat", metavar="QUESTION", nargs="?", const="What is due this week?",
+                    help="also ask the course assistant one question (uses one of the student's 20 questions an hour)")
     a = ap.parse_args()
     if not a.base:
         print("give --base https://<service-url> (or set BASE_URL)", file=sys.stderr)
@@ -62,6 +64,7 @@ def main() -> int:
     check(call(base, "GET", "/api/v1/me", "not-a-real-token")[0] == 401, "garbage token -> 401")
     check(call(base, "GET", "/api/v1/deck")[0] == 401, "deck without token -> 401")
     check(call(base, "GET", "/api/v1/nothing-here")[0] == 401, "unknown api path without a token -> 401 (no route enumeration)")
+    check(call(base, "POST", "/api/v1/chat", None, {"question": "x"})[0] == 401, "chat without a token -> 401")
 
     token = os.environ.get("SKIM_TOKEN") or (getpass.getpass("Supabase access token (hidden, not stored): ").strip() if a.token_prompt else None)
     if not token:
@@ -94,6 +97,23 @@ def main() -> int:
     st, rem = call(base, "GET", "/api/v1/reminders", token)
     check(st == 200 and isinstance(rem.get("reminders"), list) and rem.get("etag"), "GET /reminders", str(st))
     print(f"      reminders scheduled: {len(rem.get('reminders', []))}; next: {(rem.get('reminders') or [{}])[0].get('fire_at')}")
+    st, allr = call(base, "GET", "/api/v1/reminders/all", token)
+    check(st == 200 and isinstance(allr.get("reminders"), list) and all("enabled" in r for r in allr["reminders"]), "GET /reminders/all (on and off)", str(st))
+    if subs.get("teams"):
+        tid = subs["teams"][0]["id"]
+        st, tc = call(base, "GET", f"/api/v1/teams/{tid}/cards?limit=5", token)
+        check(st == 200 and isinstance(tc.get("cards"), list), "GET /teams/{id}/cards (a team's cards)", str(st))
+        check(call(base, "GET", "/api/v1/teams/not-my-team/cards", token)[0] == 404, "a team you are not in -> 404")
+    feat = (me.get("features") or {}).get("chat")
+    print(f"      Ask the course is {'ON' if feat else 'OFF'} (features.chat in /me)")
+    if a.chat:
+        st, ans = call(base, "POST", "/api/v1/chat", token, {"question": a.chat})
+        if feat:
+            check(st == 200 and {"answer", "citations", "refused"} <= set(ans or {}), f"POST /chat -> an answer with citations ({st})", str(ans))
+            if st == 200:
+                print(f"      answer: {ans['answer'][:200]!r}; citations {[(c['n'], c['title'][:30]) for c in ans['citations']]}; refused={ans['refused']}")
+        else:
+            check(st == 503, "POST /chat -> 503 while CHAT_ENABLED is off", str(st))
     st, sync = call(base, "GET", "/api/v1/sync", token)
     check(st == 200 and sync.get("reminders_etag") == rem.get("etag"), "GET /sync etag matches /reminders", str(st))
     check(call(base, "GET", "/api/v1/items/999999999", token)[0] == 404, "an item you cannot see -> 404")

@@ -1,0 +1,18 @@
+id,question,anchor_text,expected_source,expected_fact,forbid,expect_refusal,notes
+1,When is the midsem?,,Midsem,9 Nov;2:00|14:00,,n,Event fact: Mon 9 Nov 14:00
+2,Where is the midsem being held?,,Midsem,LHC 201,Main Exam Hall,n,Venue changed (msg 35); the old venue must not be given as current
+3,Has the midsem venue changed?,,Midsem venue change,LHC 201|moved|changed,,n,
+4,Is the midsem open book?,,closed book,closed book|one A4|A4,,n,Answer is only in a free-text announcement (msg 33): retrieval, not events
+5,When is Quiz 2?,,Quiz 2,6 Nov,,n,Postponed from 4 Nov (msg 30)
+6,Was the lab session for Problem Set 3 moved?,,Lab session,3 Nov,,n,Cancelled then rescheduled (msg 21 then 22)
+7,Where is the lab for Problem Set 3?,,Lab,Computer Lab 2,,n,
+8,When is Assignment 1 due now?,,Assignment 1,28 Oct,,n,Extended from 26 Oct (msg 12)
+9,When is the Assignment 2 deadline?,,Assignment 2,2 Nov,,n,"""Next Monday"" resolved to 2 Nov"
+10,When is the project proposal due?,,Project proposal,13 Nov,,n,
+11,When are the final presentations?,,Final presentations,not announced|last week|no date|not been announced|couldn't find,30 Nov;1 Dec,n,"At this date only ""last week of classes"" is known: no invented date"
+12,When is the endsem exam?,,,,,y,Not announced yet at this date (msg 48 comes later): must refuse
+13,What time are office hours?,,office hours,Tuesday|4,Thursday,n,Recurring Tuesdays 4-5 PM (msg 2); the Thursday change comes later
+14,Is there a class today at 4 PM?,,Doubt-clearing,LHC 104;4,,n,Doubt-clearing class Sun 8 Nov 16:00 (msg 36)
+15,Has this changed?,Midsem venue change,Midsem,LHC 201,,n,Anchored to the venue-change card
+16,What is the airspeed velocity of an unladen swallow?,,,,,y,Out of scope: must refuse
+17,Who won the cricket match yesterday?,,,,,y,Out of scope: must refuse
