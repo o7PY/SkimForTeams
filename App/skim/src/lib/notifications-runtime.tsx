@@ -85,7 +85,7 @@ export function NotificationsRuntime() {
     const data = last.notification.request.content.data;
     if (!isSkimNotification(data)) return;
     void qc.invalidateQueries({ queryKey: queryKeys.deck });
-    const target = routeForNotification(data);
+    const target = routeForNotification(data, last.notification.request.content.title);
     if (target) router.push(target);
     else router.navigate('/');
     void Notifications.clearLastNotificationResponse();

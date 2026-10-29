@@ -201,6 +201,14 @@ describe('tapping a notification', () => {
     [{ item_id: '1'.repeat(30) }], [{ item_id: NaN }], [{ item_id: null }], [{}], [null], [undefined], ['7'], [7],
   ])('%j opens the deck instead', (data) => expect(routeForNotification(data)).toBeNull());
 
+  test('the notification headline rides along as the card screen\'s placeholder; an empty or oversized one is trimmed or dropped', () => {
+    expect(routeForNotification({ item_id: 7 }, 'CS 201: Quiz 1 moved')).toEqual({ pathname: '/item/[id]', params: { id: '7', title: 'CS 201: Quiz 1 moved' } });
+    expect(routeForNotification({ item_id: 7 }, '   ')).toEqual({ pathname: '/item/[id]', params: { id: '7' } });
+    expect(routeForNotification({ item_id: 7 }, null)).toEqual({ pathname: '/item/[id]', params: { id: '7' } });
+    expect((routeForNotification({ item_id: 7 }, 'x'.repeat(500)) as { params: { title: string } }).params.title).toHaveLength(120);
+    expect(routeForNotification({}, 'a title without a card')).toBeNull();
+  });
+
   test('only this app’s own notifications are recognised', () => {
     expect(isSkimNotification({ type: 'reminder' })).toBe(true);
     expect(isSkimNotification({ type: 'sync' })).toBe(true);

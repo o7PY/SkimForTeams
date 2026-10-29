@@ -131,14 +131,17 @@ export async function backgroundSync(deps: {
 }
 
 // ---------------------------------------------------------------- notification taps
-export type Target = { pathname: '/item/[id]'; params: { id: string } } | null;
+export type Target = { pathname: '/item/[id]'; params: { id: string; title?: string } } | null;
 
-/** Where a tapped notification goes. Only a positive whole item id is trusted; anything else opens the deck (null). */
-export function routeForNotification(data: unknown): Target {
+/** Where a tapped notification goes. Only a positive whole item id is trusted; anything else opens the deck (null). `title` is the
+ *  notification's own headline, handed to the card screen so it can show something real while the card is still loading. */
+export function routeForNotification(data: unknown, title?: string | null): Target {
   const d = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   const raw = d.item_id;
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d{1,15}$/.test(raw) ? Number(raw) : NaN;
-  return Number.isSafeInteger(n) && n > 0 ? { pathname: '/item/[id]', params: { id: String(n) } } : null;
+  if (!(Number.isSafeInteger(n) && n > 0)) return null;
+  const t = typeof title === 'string' ? title.trim().slice(0, 120) : '';
+  return { pathname: '/item/[id]', params: t ? { id: String(n), title: t } : { id: String(n) } };
 }
 
 /** Notifications this app sent (reminders, or pushes carrying `type: sync`); anything else is ignored. */

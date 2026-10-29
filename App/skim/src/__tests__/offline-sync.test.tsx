@@ -24,13 +24,15 @@ const at = (n: number) => new Date(Date.UTC(2026, 9, 1, 0, n)).toISOString(); //
 const card = (id: number, over: Partial<Card> = {}): Card => messageCard({ id, occurred_at: at(id), ...over });
 const detail = (id: number): Card => ({ ...card(id), recommended_reminders: [], event_history: [], folded: [] });
 
-function serve(opts: { deck?: number[]; history?: number[]; starred?: number[] }) {
+function serve(opts: { deck?: number[]; history?: number[]; starred?: number[]; teams?: string[] }) {
   mockGet.mockImplementation(async (path: string) => {
     if (path.startsWith('/deck')) return { cards: (opts.deck ?? []).map((i) => card(i)), next_cursor: null, total: (opts.deck ?? []).length };
     if (path === '/history') return { cards: (opts.history ?? []).map((i) => card(i)) };
     if (path === '/starred') return { cards: (opts.starred ?? []).map((i) => card(i)) };
     if (path.startsWith('/reminders')) return { reminders: [], etag: 'e1' };
-    if (path === '/subscriptions') return { teams: [] };
+    if (path === '/subscriptions') return { teams: (opts.teams ?? []).map((id) => ({ id, name: id })) };
+    const tm = /^\/teams\/([^/]+)\/cards/.exec(path);
+    if (tm) return { cards: [card(900)], next_cursor: 'more', total: 1 };
     if (path === '/me') return { id: 'u1', email: null, name: null, created_at: at(0), settings: {} };
     const m = /^\/items\/(\d+)$/.exec(path);
     if (m) return detail(Number(m[1]));
@@ -156,4 +158,35 @@ test('details at most 3 at a time', async () => {
   });
   await mount();
   expect(peak).toBe(3);
+});
+
+test('every course\'s first page of cards is loaded too, so a team opens at once and offline', async () => {
+  serve({ deck: range(1, 3), teams: ['T1', 'T2'] });
+  const qc = await mount();
+  for (const t of ['T1', 'T2']) {
+    const d = qc.getQueryData<{ pages: { cards: Card[] }[] }>(['team-cards', t]);
+    expect(d?.pages).toHaveLength(1);
+    expect(d?.pages[0].cards).toHaveLength(1);
+  }
+  expect(calls('/teams/T1/cards')).toBe(1);
+});
+
+test('a screen the student is waiting on goes first: card details are not requested while it is loading', async () => {
+  serve({ deck: range(1, 4) });
+  const real = mockGet.getMockImplementation()!;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  // a card opened from a notification: its own request, slow, and not one of the loader's
+  mockGet.mockImplementation(async (path: string) => (path === '/items/99' ? (await gate, detail(99)) : real(path)));
+  void qc.fetchQuery({ queryKey: ['item', '99'], queryFn: () => mockGet('/items/99') });
+  const started = mount(qc);
+  await new Promise((r) => setTimeout(r, 400));
+  expect(calls('/items/')).toBe(1);        // only the student's own request so far: the loader is holding back
+  expect(calls('/deck')).toBe(0);
+  release();
+  await started;
+  await new Promise((r) => setTimeout(r, 400)); // the loader notices the screen has finished on its next check
+  await settle(qc);
+  expect(itemIds(qc)).toEqual([1, 2, 3, 4]);   // then it carries on (99 is not in the deck, so it is not kept)
 });

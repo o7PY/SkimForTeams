@@ -52,22 +52,43 @@ export async function runPool<T>(items: readonly T[], n: number, worker: (item: 
   await Promise.all(Array.from({ length: Math.max(1, Math.min(n, items.length)) }, lane));
 }
 
+/** Wait (checking every `stepMs`, for at most `maxMs`) until `quiet()` is true. Resolves either way: a busy screen must delay the
+ *  background loader, never stop it. */
+export async function waitUntilQuiet(quiet: () => boolean, maxMs: number, stepMs = 150): Promise<void> {
+  const until = Date.now() + maxMs;
+  while (!quiet() && Date.now() < until) await new Promise((r) => setTimeout(r, stepMs));
+}
+
 // ---------------------------------------------------------------- keeping the saved cache a safe size
-// On Android a single AsyncStorage value above about 2 MB cannot be read back, and the whole query cache is one value. When it grows
-// past `maxChars`, the oldest opened-card details go first (they can be fetched again); lists and settings are never dropped.
-type SavedQuery = { queryKey: readonly unknown[]; state: { dataUpdatedAt?: number } };
+// On Android a single AsyncStorage value above about 2 MB cannot be read back, and the whole query cache is one value. What is saved
+// is trimmed in this order: each team's card list keeps only its first page; when the total is still over `maxChars`, the oldest team
+// lists go, then the oldest opened-card details (they can be fetched again). Other lists and settings are never dropped.
+type SavedQuery = { queryKey: readonly unknown[]; state: { dataUpdatedAt?: number; data?: unknown } };
 type Saved = { clientState: { queries: SavedQuery[] } };
+export const TEAM_CARDS_KEY = 'team-cards';
+
+type Paged = { pages?: unknown[]; pageParams?: unknown[] };
+/** A team's card list as it is saved: the first page only (the rest is one scroll away when the phone is online). */
+function firstPageOnly(q: SavedQuery): SavedQuery {
+  const d = q.state.data as Paged | undefined;
+  if (q.queryKey[0] !== TEAM_CARDS_KEY || !d || !Array.isArray(d.pages) || d.pages.length <= 1) return q;
+  return { ...q, state: { ...q.state, data: { ...d, pages: d.pages.slice(0, 1), pageParams: (d.pageParams ?? []).slice(0, 1) } } };
+}
 
 export function pruneForSize<T extends Saved>(client: T, maxChars: number): T {
-  let size = JSON.stringify(client).length;
-  if (size <= maxChars) return client;
-  const oldestDetailsFirst = client.clientState.queries.filter((q) => q.queryKey[0] === 'item').sort((a, b) => (a.state.dataUpdatedAt ?? 0) - (b.state.dataUpdatedAt ?? 0));
+  const trimmed = client.clientState.queries.map(firstPageOnly);
+  const changed = trimmed.some((q, i) => q !== client.clientState.queries[i]);
+  const base = changed ? { ...client, clientState: { ...client.clientState, queries: trimmed } } : client;
+  let size = JSON.stringify(base).length;
+  if (size <= maxChars) return base;
+  const oldest = (key: string) =>
+    base.clientState.queries.filter((q) => q.queryKey[0] === key).sort((a, b) => (a.state.dataUpdatedAt ?? 0) - (b.state.dataUpdatedAt ?? 0));
   const drop = new Set<SavedQuery>();
-  for (const q of oldestDetailsFirst) {
+  for (const q of [...oldest(TEAM_CARDS_KEY), ...oldest('item')]) {
     if (size <= maxChars) break;
     size -= JSON.stringify(q).length + 1;
     drop.add(q);
   }
-  return { ...client, clientState: { ...client.clientState, queries: client.clientState.queries.filter((q) => !drop.has(q)) } };
+  return { ...base, clientState: { ...base.clientState, queries: base.clientState.queries.filter((q) => !drop.has(q)) } };
 }
 export const MAX_SAVED_CHARS = 1_500_000;

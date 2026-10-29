@@ -1,5 +1,5 @@
 import { prependToList, asStarredEntry, asSwiped, withoutSwiped } from '@/lib/deck-cache';
-import { evictIds, keepIds, MAX_STARRED_KEPT, pruneForSize, runPool, WINDOW } from '@/lib/offline-window';
+import { evictIds, keepIds, MAX_STARRED_KEPT, pruneForSize, runPool, waitUntilQuiet, WINDOW } from '@/lib/offline-window';
 import { keyboardOverlap, sheetLayout } from '@/lib/sheet-layout';
 
 import { messageCard } from './fixtures';
@@ -101,6 +101,60 @@ describe('pruneForSize keeps the saved cache readable', () => {
     const c = client([q(['item', '1'], 1, 5000), q(['item', '2'], 2, 5000)]);
     pruneForSize(c, 1000);
     expect(c.clientState.queries).toHaveLength(2);
+  });
+});
+
+describe('team card lists in the saved cache', () => {
+  const list = (team: string, pages: number, updated: number, size = 100) => ({
+    queryKey: ['team-cards', team], state: { dataUpdatedAt: updated, data: { pages: Array.from({ length: pages }, (_, i) => ({ cards: ['x'.repeat(size)], next_cursor: `c${i}` })), pageParams: Array.from({ length: pages }, (_, i) => (i ? `c${i - 1}` : null)) } },
+  });
+  const q = (key: unknown[], updated: number, size = 100) => ({ queryKey: key, state: { dataUpdatedAt: updated, data: 'x'.repeat(size) } });
+  const client = (queries: unknown[]) => ({ timestamp: 1, buster: 'v1', clientState: { mutations: [], queries } }) as never;
+  type Out = { clientState: { queries: { queryKey: unknown[]; state: { data?: { pages: unknown[]; pageParams: unknown[] } } }[] } };
+
+  test('only the first page of a team is saved, with its own page parameter', () => {
+    const out = pruneForSize(client([list('T1', 4, 1)]), 1_000_000) as Out;
+    const d = out.clientState.queries[0].state.data!;
+    expect(d.pages).toHaveLength(1);
+    expect(d.pageParams).toEqual([null]);
+  });
+  test('a list that is already one page is left alone (same object)', () => {
+    const c = client([list('T1', 1, 1), q(['deck'], 1)]);
+    expect(pruneForSize(c, 1_000_000)).toBe(c);
+  });
+  test('the input is not changed by trimming', () => {
+    const c = client([list('T1', 3, 1)]) as Out;
+    pruneForSize(c as never, 1_000_000);
+    expect(c.clientState.queries[0].state.data!.pages).toHaveLength(3);
+  });
+  test('over the limit the oldest team lists go BEFORE any opened-card detail, and the deck is never touched', () => {
+    const c = client([q(['deck'], 9, 500), list('T1', 1, 1, 400), list('T2', 1, 5, 400), q(['item', '1'], 1, 300), q(['item', '2'], 2, 300)]);
+    const total = JSON.stringify(c).length;
+    const out = pruneForSize(c, total - 500) as Out;
+    const kept = out.clientState.queries.map((x) => (x.queryKey as string[]).join('/'));
+    expect(kept).toEqual(['deck', 'team-cards/T2', 'item/1', 'item/2']);   // only the oldest list had to go
+    const more = pruneForSize(c, total - 1200) as Out;
+    expect(more.clientState.queries.map((x) => (x.queryKey as string[]).join('/'))).toEqual(['deck', 'item/2']);
+  });
+});
+
+describe('waitUntilQuiet', () => {
+  test('returns at once when already quiet', async () => {
+    const t = Date.now();
+    await waitUntilQuiet(() => true, 5000);
+    expect(Date.now() - t).toBeLessThan(100);
+  });
+  test('waits until it turns quiet', async () => {
+    let busy = true;
+    setTimeout(() => { busy = false; }, 60);
+    await waitUntilQuiet(() => !busy, 5000, 10);
+    expect(busy).toBe(false);
+  });
+  test('gives up after the limit, so a busy screen can delay the loader but never stop it', async () => {
+    const t = Date.now();
+    await waitUntilQuiet(() => false, 80, 10);
+    expect(Date.now() - t).toBeGreaterThanOrEqual(70);
+    expect(Date.now() - t).toBeLessThan(500);
   });
 });
 

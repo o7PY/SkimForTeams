@@ -18,7 +18,7 @@ export const queryKeys = {
   reminders: ['reminders'] as const,
   me: ['me'] as const,
   remindersAll: ['reminders-all'] as const, // every reminder, on or off (the Reminders list); `reminders` is what the phone schedules
-  teamCards: ['team-cards'] as const, // ['team-cards', teamId]: one team's full card list (the Teams tab); never saved for offline
+  teamCards: ['team-cards'] as const, // ['team-cards', teamId]: one team's card list (the Teams tab); only its first page is saved for offline (see offline-window)
   item: ['item'] as const, // ['item', id] is one opened card; invalidating this prefix refetches them all
 };
 

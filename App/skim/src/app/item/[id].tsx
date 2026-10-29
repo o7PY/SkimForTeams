@@ -33,9 +33,9 @@ type SheetName = 'remind' | 'star' | 'snooze' | null;
 export default function Item() {
   const styles = useStyles();
   const t = useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, title: pushTitle } = useLocalSearchParams<{ id: string; title?: string }>(); // title: the notification's headline, shown while the card loads
   const { api } = useAuth();
-  const q = useQuery({ ...itemOptions(api, id ?? ''), enabled: /^\d+$/.test(id ?? '') });
+  const q = useQuery({ ...itemOptions(api, id ?? ''), enabled: /^\d+$/.test(id ?? ''), retry: 1, retryDelay: 800 });
   const card = q.data;
   const actions = useItemActions(card);
   const [sheet, setSheet] = useState<SheetName>(null);
@@ -59,6 +59,7 @@ export default function Item() {
     return (
       <Screen>
         <View style={styles.top}><IconButton icon="close" label="Close" onPress={close} /></View>
+        {q.isPending && !q.data && pushTitle ? <AppText variant="headlineSm" numberOfLines={3} style={styles.pending}>{pushTitle}</AppText> : null}
         <View style={styles.center}>
           {q.isPending && !q.data ? <DeckSkeleton /> : <ErrorState title="This card isn’t available" text="It may have been removed, or you may be offline." onRetry={() => void q.refetch()} />}
         </View>
@@ -208,6 +209,7 @@ const useStyles = makeStyles((t) => ({
   line: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 44 },
   flex: { flex: 1 },
   history: { backgroundColor: t.surfaceRaised, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, padding: space.md, gap: 4 },
+  pending: { paddingBottom: space.md },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   custom: { gap: space.md, paddingTop: space.sm },
   toast: { position: 'absolute', left: 0, right: 0, bottom: space.lg, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md, backgroundColor: t.primarySoft, borderWidth: 1, borderColor: t.primaryBorder },
